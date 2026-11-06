@@ -1,0 +1,1890 @@
+/* 
+Skládá se z bezdotykového displeje 2,8 palců, UPS (s baterii 18650,která zajištuje aby se baterie správně nabila,případně nepodbila),dfplayeru s SD kartou, 3 tlačítek, elektroniky s naprogramovaným mikropočítačem ESP32D.
+
+ Po zapnutí se připojí k wifi ( určené v kódu), vezme si čas z NTP, zjistí si kdo má dneska svátek. Čas si poté drží podle svého vnitřního krystalu. Co hodinu si ověří správnost času ( případně upraví) a zjistí kdo má dnes svátek (případně upraví). Pokud není přítomné napájení ze sítě po dobu delší jak 10s vypne se z důvodu šetření baterii
+wifi. V tu dobu se neaktualizuje čas, svátek,venkovní teplota, napětí baterie, budík nevysílá na web.
+Na začátku programu (a po každém obnovení napájení ze sítě) řekne budík routeru jakou chce aby mu dal IP. Aby byla 100% jistota, že adresa již není obsazena můžeme izolovat
+IP pro náš budík v routeru, nebo povolit (tak to mám já) routeru, že DHCP bude rozdávat jen do 230. Nebo to nechat tak a šance že router dát naší adresu třeba mobilu je poměrně malá.IP pro Matyáška - 192.168.0.232 , Rozárku - 192.168.0.233 , Vítečka 192.168.0.234. Pokud by došlo k "zaciklování" programu po dobu >15 s , dojde díky watchdogu k restartu budíku.
+
+Budík dokáže měřit vnitřní a venkovní teplotu. Čidlo pro měření vnitřní i vnější teploty je ds18b20. Vnitřní teplota se měří co 5s a je umístěno někde z venku krabičky
+budíku. Jelikož elektronika vevnitř trochu hřeje a tím ohřívá i tělo budíku je teplota trochu zkreslená. Aby byla co nejpřesnější je v kódu místo, kde si můžu nastavit její kalibraci. U Matyáška jsme porovnávali s čidlem co bylo vedle a nebylo v krabici a vyšla nám odchylka -1,5 °C. ESP32 s čidlem venkovní teploty musí být umístěno v dosahu wifi na které je i budík. Čidlo je napájeno jednou baterii 18650.Změří teplotu, změří napětí baterie, připojí se na wifi a odešle budíku, ten odpoví že data příjmul. Poté na 10 min usne....A pořád dokola. Pokud budík 30 min nedostane žádné data od venkovního čidla, zobrazí ikonu baterie šedou barvou a místo teploty --:--. Aby připojení k wifi trvalo co nejkradší dobu v kódu vypisujeme na jaké IP adresy to má posílat. Na displeji vpravo nahoře je ikonka baterie (venkovní baterie),která muže být šedá - neznámá hodnota, zelena > 3,3V, žlutá >3<3,3V a červená <3V. Tyhle hodnoty a barvy se dají v kódu měnit. 
+Hodnoty teplot se pak zobrazují na displeji i s barevným rozlišením ( opět jde v kódu měnit barvu a prahy).
+
+Pro přijojení na webu vypíše IP adresu do příkazového řádku internetového prohlížeče. Např. do chrome na místo kde píšeme např. seznam.cz vypíšeme 192.168.0.233, tomhle případě se spojíme s Rozinčinym budíkem. Musíme, ale být na wifi stejné jak budík. Na webu můžeme nastavovat čas buzení,vypínat, zapínat. Aby jsme večer nemuseli snižovat jas , můžeme si nastav noční režim, kde si určíme jas a dobu kdy ho chce mít aktivním. Rozmesí jasu je 0 - 4000. Bohužel to není linerání. Např. rozdíl mezi 300 a 4000 je minimální a naopak rozdíl mezi 2 a 10 je obrovský.Na webu se dá taky nastavovat jas displeje v normálním režimu. Na zadní stěně krabičky je USB C konektor s popisem výstup. Ten je ovládán jen pomocí webu a nastavujeme si čas kdy bude seplý a napětí jaké z něho půjde (od 0 V do 5V). Třeba na noční světýlko nebo litofanii.
+
+Obsahuje 3 tlačítka - set, up, down. Pomocí jich si můžeme nastavit alarm. Zmáčknu-li set na krátkou dobu dostanu se do režimu určujícího čas buzení. Čas budíku se rozbliká zeleně, pomocí tlačíte up a down natavím nejdříve hodiny, zmáčknu set a blikají minuty. Zas nastavím minuty, pote set, čas přestane blikat. Pokud je čas červeně, není alarm aktivní. Pokud zmáčknu set na >2 aktivuju (deaktivuju) alarm. Aktivní alarm - zelený čas buzení a zelená ikona budíku. Jak dojde k času buzení , aktivuje se dfplayer, který vybere náhodně jednu z 5 skladeb. Dfplayer obsahuje SD kartu na které musí být soubory s koncovkou mp3. Ve formátu 0001.mp3 až 0005.mp3. Navíc se rozsvítí světýlko na tlačítku set, na dispeji se vypíše nápis Rozinko vstávej !!! ( když budete měnit musí být bez diakritiky), ikona budíku bude červeně. Budík se pozastavit (aktivuje se snooze)pomocí jakéhokoliv tlačítka. Aby došlo k jeho celé deaktivaci musíme podržet tlačítko set >2s. Pokud tak neuděláme bude hrát minutu, pak 3 minuty čeká, opět minutu hraje, minutu čeká, minutu hraje. Pak se deaktivuje sám. Pokud v době buzení byl aktivní noční režim, po konci buzení se deaktivuje. Noční režim se může taky deaktivovat stiskem st >2s. Opětovnému aktivování nočního režimu dojde až nastane čas nastavený přes web. V nočním režimu, počítá se že čas na displeji není skoro vidět, se dána 5s rozsvítit zmáčknutím jakéhokoliv tlačítka. 
+
+Pro nahrání kódu do ESP32 potřebujeme jen kabel USB, na jedné straně A a na druhé C nebo micro. Do počítače naistalovat program arduinoIDE. Aby se podařilo kód nahrát , musí se do IDE doinstalovat board ESP32. Musí se taky naistalovat všechny knihovny ( jsou na začátku kódu , jedna z nich vypadá tahle #include <TFT_eSPI.h>). V dokumentech arduinaIDE se musí najít soubor User_Setup.h . A ten nahradit tím co na flešce. Jedná se o úpravu knihovny pro náš displej. Pak už stačí jen celý tenhle kód nakopírovat do arduinaIDE a zmáčknout upload (šipka doprava) . Při instalaci knihoven doporučuji spolupracovat s AI , poradí od jakého autora instalovat.
+
+Kdyby byl jakýkoliv problém, jak s nahrávání kodu či při zapojení,rád pomůžu. Nebo můžeme kod nahrát na počítači u nás,kde už mám vše nastavené.
+
+
+
+
+
+
+// na těchto řádcích jsou místa co si můžete lehce nastavit:
+        //  -------------- doby snooze
+// ===== WIFI =====
+// ==== definice statické IP ====
+// ===== WiFi s pevnou IP =====
+// ===== PLYNULÉ ZVYŠOVÁNÍ HLASITOSTI =====
+// ==== barvy teplot doma ====
+// ==== barvy teplot venku ====
+// ==== barva baterie ====
+// ==== vnitřní ====
+// ==== venkovní ====
+// ==== Hláška při zvonění  ====
+// aby vnitřní teplota ukazovala o 1,5 stupnu min jak naměří 
+<title>Cvicny budík</title>		- tak se bude zobrazovat v příkazovém řádku na webu
+<h2>⏰ Cvičný budík</h2>		- tak se bude zobrazovat na webu
+
+
+Pod tímto řádkem je vykresleí budíku pro ikonu mobilu:
+<title>Rozincin budík</title>
+Rozinčin:
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48dGV4dCB5PSIwLjllbSIgZm9udC1zaXplPSI5MCI+8J+UlDwvdGV4dD48L3N2Zz4=">
+
+Matyho
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48dGV4dCB5PSIwLjllbSIgZm9udC1zaXplPSI5MCI+4o+wPC90ZXh0Pjwvc3ZnPg==">
+
+
+
+Vstup pro detekci napájení ze sítě má Maty a zkušební přípravek na PIN 34, Rozinka a Víťa na PIN15. Takhle se musí upravit software pro tyhle verze:
+
+Pro verzi zkušební přípravek:
+   #define POWER_DETECT_PIN 34
+   pinMode(POWER_DETECT_PIN, INPUT);   - na začátku setupu
+   PIN 34 nemá pulldown odpor, takže musí být na desce přidán odpor 10k proti zemi
+
+Pro verzi Rozinka,Maty a Víťa:
+   #define POWER_DETECT_PIN 15
+   pinMode(POWER_DETECT_PIN, INPUT_PULLDOWN);
+ Rozinka a Víťa na PIN 15. Pokud ho mám na PIN 15 rezistor na desce být nemusí, nastavuju to softwarově, PIN15 ho
+ má v sobě 
+
+
+*/
+
+
+#include <WiFi.h>
+#include <WebServer.h>
+#include <time.h>
+#include <TFT_eSPI.h>
+#include <Preferences.h>
+#include <DFRobotDFPlayerMini.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <WiFiClientSecure.h>
+#include <esp_task_wdt.h>
+
+// aby vnitřní teplota ukazovala o 1,5 stupnu min jak naměří
+const float INTERNAL_TEMP_OFFSET = -1.5; // Kalibrace vnitřního čidla
+
+// ==== definice statické IP ====
+IPAddress local_IP(192, 168, 1, 235);       // IP pro budík
+IPAddress gateway(192,168,1,1);         // brána směrovače
+IPAddress subnet(255,255,255,0);        // maska sítě
+IPAddress primaryDNS(8,8,8,8);          // primární DNS
+IPAddress secondaryDNS(8,8,4,4);        // sekundární DNS
+
+void handleUpdate();
+void resetAfterAlarm();    
+bool redraw = true;          // příznak pro překreslení displeje
+bool userIsSettingAlarm = false; // Příznak, že se uživatel hrabe v nastavení
+bool snoozeTriggeredThisCycle = false;  //
+bool alarmRunning = false;
+
+// ==== pritomnost napájení z adapteru-vyp či zap wiffi ===
+bool wifiEnabled = true;
+
+// ===== WIFI =====
+const char* ssid = "DEK1";  // název sítě 
+const char* password = "Elnici100";   // heslo
+
+// ===== DISPLEJ =====
+TFT_eSPI tft;
+
+// ===== THINGSPEAK NASTAVENÍ =====
+const char* serverThingSpeak = "https://api.thingspeak.com/update";
+String apiKey = "ZF81YWNW6JMHUWL6"; // Sem pak vložíš klíč, který ti ThingSpeak vygeneruje
+
+// Proměnná pro hlídání, zda už jsme v dané hodině odesílali
+int lastLoggedHour = -1;
+
+// ==== diakritika ====
+String removeDiacritics(String s) {
+  s.replace("á", "a");
+  s.replace("Á", "A");
+  s.replace("č", "c");
+  s.replace("Č", "C");
+  s.replace("ď", "d");
+  s.replace("Ď", "D");
+  s.replace("é", "e");
+  s.replace("É", "E");
+  s.replace("ě", "e");
+  s.replace("Ě", "E");
+  s.replace("í", "i");
+  s.replace("Í", "I");
+  s.replace("ň", "n");
+  s.replace("Ň", "N");
+  s.replace("ó", "o");
+  s.replace("Ó", "O");
+  s.replace("ř", "r");
+  s.replace("Ř", "R");
+  s.replace("š", "s");
+  s.replace("Š", "S");
+  s.replace("ť", "t");
+  s.replace("Ť", "T");
+  s.replace("ú", "u");
+  s.replace("Ú", "U");
+  s.replace("ů", "u");
+  s.replace("Ů", "U");
+  s.replace("ý", "y");
+  s.replace("Ý", "Y");
+  s.replace("ž", "z");
+  s.replace("Ž", "Z");
+  return s;
+}
+
+// ===== RETRO IKONA BUDÍKU 16x16 =====
+void drawAlarmIcon16(int x, int y, uint16_t color) {
+  int cx = x + 8;
+  int cy = y + 8;
+
+  // tělo budíku
+  tft.fillCircle(cx, cy, 7, color);
+  tft.drawCircle(cx, cy, 7, TFT_BLACK);
+
+  // ručičky
+  tft.drawLine(cx, cy, cx, cy - 4, TFT_BLACK);
+  tft.drawLine(cx, cy, cx + 3, cy, TFT_BLACK);
+  tft.fillCircle(cx, cy, 1, TFT_BLACK);
+
+  // zvonky
+  tft.fillCircle(cx - 5, y + 2, 2, color);
+  tft.fillCircle(cx + 5, y + 2, 2, color);
+}
+
+// ==== co hodinu si vezne čas z netu a upraví se =====
+unsigned long lastNtpSyncMillis = 0;
+const unsigned long NTP_SYNC_INTERVAL = 60UL * 60UL * 1000UL;  // 1 hodina
+
+// ===== TLAČÍTKA =====
+#define BTN_SET 32
+#define BTN_UP 33
+#define BTN_DOWN 25
+
+// === fontánka ===
+float fontankaBat = NAN;
+String fontankaLastTime = "--:--";
+
+// ===== PODSVIT / JAS =====
+#define BACKLIGHT_PIN 27
+#define PWM_FREQ 10000                       // 10 kHz – bez viditelného blikání
+#define PWM_RESOLUTION 12                    // 0–4095
+#define PWM_MAX ((1 << PWM_RESOLUTION) - 1)  // 4095
+uint16_t brightness = 1500;                  // vychozi jas po zapnutí, tady se ale nenastavuje, nastavuje se na řadku 131
+uint16_t normalBrightness = 1500;            // uložený / běžný jas (mimo alarm)
+bool alarmBrightnessForced = false;          // jestli alarm vynutil max jas
+
+// ===== NOČNÍ REŽIM =====
+uint8_t nightStartHour = 22;
+uint8_t nightStartMinute = 0;
+uint8_t nightEndHour = 6;
+uint8_t nightEndMinute = 0;
+uint16_t nightBrightness = 500;
+bool nightModeActive = false;
+bool nightModeOverride = false;  // ruční vypnutí nočního režimu
+
+//====regulace jasu,dole jemnejší nahoře hrubší====
+uint16_t getBrightnessStep(uint16_t current) {
+  if (current < 30) return 2;  // hodně jemné dole
+  else if (current < 1200) return 150;
+  else if (current < 2500) return 200;
+  else return 300;  // nahoře hrubé
+}
+
+// ==== reakce tlačítek v nočním režimu (rozsvícení na 5s po zmáčknutí) =====
+bool nightWakeActive = false;
+unsigned long nightWakeUntil = 0;
+
+const uint16_t NIGHT_WAKE_BRIGHTNESS = PWM_MAX;  // 100% jas
+const unsigned long NIGHT_WAKE_TIME = 5000;      // 5 sekund
+
+// ==== kdo má svátek ====
+
+String todayName = "";
+unsigned long lastNameFetch = 0;
+const unsigned long NAME_FETCH_INTERVAL = 1UL * 60UL * 60UL * 1000UL;  // 1 hodin se bude aktualizovat
+
+// ===== ALARM A SVĚTÝLKO VÝSTUP =====
+#define ALARM_PIN_LEFT 22   // Svit levé oko (zůstává pro buzení)
+#define NIGHT_LIGHT_PIN 26  // Pravé oko - Noční světýlko 
+
+// ===== PROMĚNNÉ PRO NOČNÍ SVĚTÝLKO =====
+uint8_t nlStartHour = 20;
+uint8_t nlStartMinute = 0;
+uint8_t nlEndHour = 6;
+uint8_t nlEndMinute = 0;
+uint8_t nlBrightness = 50; // Jas v procentech (0-100)
+
+// ===== PROMĚNNÉ PRO FONTÁNKU =====
+uint8_t fontankaStartHour = 10;
+uint8_t fontankaStartMinute = 0;
+uint8_t fontankaEndHour = 16;
+uint8_t fontankaEndMinute = 0;
+
+// ==== přítomnost napájení z adaptéru =====
+#define POWER_DETECT_PIN 34
+
+// ===== DFPLAYER =====
+HardwareSerial dfSerial(2);  // Serial2
+DFRobotDFPlayerMini dfPlayer;
+
+// ===== PLYNULÉ ZVYŠOVÁNÍ HLASITOSTI =====
+const uint8_t VOLUME_START = 10;		// od 1
+const uint8_t VOLUME_MAX = 20;                 //  max 30
+const unsigned long VOLUME_RAMP_TIME = 30000;  //  kdy bude max hlasitost (ted je 30s)
+
+// ===== ČAS =====
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 3600;
+const int daylightOffset_sec = 0;
+
+// ==== dny v týdnu ===
+const char* dnyVTydnu[] = {
+  "Nedele", "Pondeli", "Utery", "Streda",
+  "Ctvrtek", "Patek", "Sobota"
+};
+
+// ===== BUDÍK =====
+Preferences prefs;
+
+struct Alarm {
+  uint8_t hour;
+  uint8_t minute;
+  bool enabled;
+};
+
+Alarm alarm1;
+
+// ===== UI STAV =====
+enum UiState {
+  SHOW_TIME,
+  SET_HOUR,
+  SET_MINUTE
+};
+
+UiState uiState = SHOW_TIME;
+int lastMinute = -1;
+int lastAlarmMinute = -1;
+
+// ==== čas po které se při neaktivitě při nastavování vrátí zpět======
+unsigned long lastSettingActivityMillis = 0; // Čas poslední aktivity v režimu nastavování
+const unsigned long SETTING_TIMEOUT = 5000;  // 5 sekund timeout
+
+// ===== TEPLOTA – VNITŘNÍ DS18B20 =====
+#define ONE_WIRE_BUS_INTERNAL 13
+
+OneWire oneWireInternal(ONE_WIRE_BUS_INTERNAL);
+DallasTemperature sensorsInternal(&oneWireInternal);
+
+float tempInternal = NAN;    // aktuální vnitřní teplota
+float tempExternal = NAN;    // venkovní teplota
+float batteryVoltage = NAN;  // baterka venkovní
+
+WebServer server(80);
+
+// ==== definice teplot ====
+unsigned long lastExternalMillis = 0;
+
+// ==== barvy teplot doma ====				
+uint16_t getIndoorTempColor(float t) {
+  if (isnan(t)) return TFT_WHITE;
+  if (t < 18.0) return TFT_BLUE;			// teplotní prahy + barva písma
+  if (t < 22.0) return TFT_CYAN;
+  if (t < 24.0) return TFT_GREEN;
+  if (t <= 26.0) return TFT_YELLOW;
+  return TFT_RED;
+}
+
+// ==== barvy teplot venku ====
+uint16_t getOutdoorTempColor(float t) {
+  if (isnan(t)) return TFT_WHITE;
+  if (t <= 0) return TFT_BLUE;
+  if (t <= 10) return TFT_CYAN;				// teplotní prahy + barva písma
+  if (t <= 22) return TFT_GREEN;
+  if (t <= 28) return TFT_YELLOW;
+  return TFT_RED;
+}
+
+// ==== barva baterie ====
+uint16_t getBatteryColor(float v) {
+  if (isnan(v)) return TFT_DARKGREY; 		 	 // neznámá hodnota
+  if (v > 3.3) return TFT_GREEN;			// napěťové prahy + barva písma
+  if (v >= 3.0) return TFT_YELLOW;
+  return TFT_RED;
+}
+
+// ===== SNOOZE LOGIKA =====
+uint8_t snoozeCount = 0;    // kolikrát už zvonil
+bool snoozeActive = false;  // čekáme na další zvonění
+unsigned long nextAlarmMillis = 0;
+
+// ===== PROCES BUZENÍ (1.–3. zazvonění) =====
+bool wakeProcessActive = false;
+
+const unsigned long SNOOZE_1 = 3 * 60 * 1000UL;  // 3 minut 		// za jak dlouho bude zvonit budík při prvním opakování (3 x 60sek)
+const unsigned long SNOOZE_2 = 1 * 60 * 1000UL;  // 1 minuty 		// za jak dlouho bude zvonit budík při druhém opakování
+
+// ===== Blikání při nastavování =====
+unsigned long lastBlinkTime = 0;
+bool blinkState = true;
+
+//==== PRI AKTIVNIM BUDIKU JDOU TLACITKY JEN VYPNOUT BUDIK ====
+unsigned long buttonsBlockedUntil = 0;
+const unsigned long BUTTON_BLOCK_TIME = 1000;  // 1 sekunda
+
+// ===== GLOBÁLNÍ DEBOUNCE (ochrana proti dvojitému stisku) =====
+unsigned long lastButtonActionMillis = 0;
+const unsigned long BUTTON_DEBOUNCE_TIME = 250;  // ms
+
+bool buttonActionAllowed() {
+  unsigned long now = millis();
+
+  if (now < buttonsBlockedUntil) return false;  // blokace po alarmu
+  if (now - lastButtonActionMillis < BUTTON_DEBOUNCE_TIME) return false;
+
+  lastButtonActionMillis = now;
+  return true;
+}
+
+// ===== DEBOUNCE pro UP/DOWN =====
+bool buttonPressed(int pin) {
+  static unsigned long lastPress[40];
+  if (digitalRead(pin) == LOW) {
+    if (millis() - lastPress[pin] > 300) {
+      lastPress[pin] = millis();
+      return true;
+    }
+  }
+  return false;
+}
+
+// ===== ULOŽENÍ / NAČTENÍ BUDÍKU =====
+void loadAlarm() {
+  prefs.begin("alarm", true);
+  alarm1.hour = prefs.getUChar("hour", 7);
+  alarm1.minute = prefs.getUChar("minute", 0);
+  alarm1.enabled = prefs.getBool("enabled", true);
+  prefs.end();
+}
+
+void saveAlarm() {
+  prefs.begin("alarm", false);
+  prefs.putUChar("hour", alarm1.hour);
+  prefs.putUChar("minute", alarm1.minute);
+  prefs.putBool("enabled", alarm1.enabled);
+  prefs.end();
+}
+
+String twoDigits(int n) {
+  if (n < 10) return "0" + String(n);
+  return String(n);
+}
+
+// ==== zobrazení na webu ====
+void handleRoot() {
+String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cvicny budík</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48dGV4dCB5PSIwLjllbSIgZm9udC1zaXplPSI5MCI+8J+UlDwvdGV4dD48L3N2Zz4=">
+<style>
+body { font-family: Arial; background:#111; color:#fff; padding:15px; }
+  .box { margin-bottom:15px; padding:10px; border-radius:10px; background:#222; }
+  .green { color:#4caf50; }
+  .yellow { color:#ffeb3b; }
+  .red { color:#f44336; }
+  button { margin:4px; padding:6px 10px; }
+</style>
+</head>
+<body>
+<h2>⏰ Cvičný budík</h2>
+
+<div class="box">
+  🌡️ Doma: <span id="tin">--</span> °C<br>
+  🌡️ Venku: <span id="tout">--</span> °C<br>
+  🔋 Baterie čidla: <span id="bat">--</span> V<br>
+  ⛲ Baterie fontánky: <span id="fbat">--</span> V (<span id="ftime">--:--</span>)
+</div>
+
+<div class="box">
+  ⏰ Budík: <b><span id="alarmTime">--:--</span></b><br>
+  Stav: <span id="alarmState">---</span><br><br>
+
+  <input type="time" id="timeInput"><br><br>
+
+  <button onclick="setTime()">Nastavit čas</button><br>
+  <button onclick="enableAlarm(1)">Zapnout</button>
+  <button onclick="enableAlarm(0)">Vypnout</button>
+</div>
+
+<div class="box">
+<h3>💡 Jas displeje</h3>
+
+<input type="range" min="0" max="100" value="50" id="bright">
+<button onclick="setBright()">Nastavit jas</button>
+
+<h3>🌙 Noční režim</h3>
+
+Start:<br>
+<input type="time" id="nightStart"><br>
+
+Konec:<br>
+<input type="time" id="nightEnd"><br>
+
+Jas:<br>
+<input type="number" id="nightBright"><br><br>
+
+<button onclick="setNight()">Uložit</button>
+</div>
+
+<div class="box">
+  <h3>🌟 Noční světýlko </h3>
+  Start:<br>
+  <input type="time" id="nlStart"><br>
+  Konec:<br>
+  <input type="time" id="nlEnd"><br>
+  Jas světýlka (0-100%):<br>
+  <input type="range" min="0" max="100" id="nlBright"><br><br>
+  <button onclick="setNL()">Uložit světýlko</button>
+</div>
+
+<div class="box">
+  <h3>⛲ Fontánka</h3>
+  Start:<br>
+  <input type="time" id="fontStart"><br>
+  Konec:<br>
+  <input type="time" id="fontEnd"><br><br>
+  <button onclick="setFontanka()">Uložit fontánku</button>
+</div>
+
+<script>
+function load() {
+  fetch('/data')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('tin').innerText = d.tin ?? '--';
+      document.getElementById('tout').innerText = d.tout ?? '--';
+      document.getElementById('bat').innerText = d.bat ?? '--';
+      document.getElementById('fbat').innerText = d.f_bat ?? '--';
+      document.getElementById('ftime').innerText = d.f_time ?? '--:--';
+
+      document.getElementById('alarmTime').innerText = d.alarm_time;
+      document.getElementById('alarmState').innerText =
+        d.alarm_enabled ? 'Zapnuty' : 'Vypnuty';
+
+      document.getElementById('alarmState').className =
+        d.alarm_active ? 'red' : (d.alarm_enabled ? 'green' : 'yellow');
+    });
+}
+
+function loadFontanka(){
+  fetch('/getFontanka')
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById("fontStart").value = data.start;
+    document.getElementById("fontEnd").value = data.end;
+  });
+}
+
+function setFontanka(){
+  let s = document.getElementById("fontStart").value;
+  let e = document.getElementById("fontEnd").value;
+  fetch('/setFontanka?start=' + s + '&end=' + e);
+}
+
+function loadNightMode(){
+  fetch('/getNightMode')
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById("nightStart").value = data.start;
+    document.getElementById("nightEnd").value = data.end;
+    document.getElementById("nightBright").value = data.brightness;
+  });
+}
+
+function loadNL(){
+  fetch('/getNL')
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById("nlStart").value = data.start;
+    document.getElementById("nlEnd").value = data.end;
+    document.getElementById("nlBright").value = data.brightness;
+  });
+}
+
+window.onload = function(){
+  load();
+  loadNightMode();
+  loadNL(); 
+  loadFontanka();
+}
+
+function setNL(){
+  let s = document.getElementById("nlStart").value;
+  let e = document.getElementById("nlEnd").value;
+  let b = document.getElementById("nlBright").value;
+  fetch('/setNL?start=' + s + '&end=' + e + '&brightness=' + b);
+}
+
+function setBright(){
+  let v = document.getElementById("bright").value;
+  fetch('/brightness?value=' + v);
+}
+
+function setNight(){
+  let s = document.getElementById("nightStart").value;
+  let e = document.getElementById("nightEnd").value;
+  let b = document.getElementById("nightBright").value;
+
+  fetch('/nightmode?start=' + s + '&end=' + e + '&brightness=' + b);
+}
+
+function setTime() {
+  const t = document.getElementById('timeInput').value;
+  if (t) fetch('/alarm?time=' + t);
+}
+
+function enableAlarm(v) {
+  fetch('/alarm?enable=' + v);
+}
+
+setInterval(load, 5000);
+load();
+</script>
+
+</body>
+</html>
+)rawliteral";
+
+  server.sendHeader("Connection", "close");
+  server.send(200, "text/html", html);
+}
+
+void handleData() {
+  StaticJsonDocument<384> doc; // navýšeno z 256 pro nové údaje
+
+  if (!isnan(tempInternal)) doc["tin"] = tempInternal;
+  if (!isnan(tempExternal)) doc["tout"] = tempExternal;
+  if (!isnan(batteryVoltage)) doc["bat"] = batteryVoltage;
+  if (!isnan(fontankaBat)) doc["f_bat"] = fontankaBat;
+  doc["f_time"] = fontankaLastTime;
+
+  char timeBuf[6];
+  sprintf(timeBuf, "%02d:%02d", alarm1.hour, alarm1.minute);
+
+  doc["alarm_time"] = timeBuf;
+  doc["alarm_enabled"] = alarm1.enabled;
+  doc["alarm_active"] = alarmRunning;
+  String out;
+  serializeJson(doc, out);
+  server.sendHeader("Connection", "close");
+  server.send(200, "application/json", out);
+}
+
+// ==== ovladání budíku z webu ====
+void handleAlarmControl() {
+  // zapnutí / vypnutí
+  if (server.hasArg("enable")) {
+    bool enable = server.arg("enable") == "1";
+    alarm1.enabled = enable;
+
+    // 🔴 pokud web vypíná alarm → kompletní reset
+    if (!enable) {
+      resetAfterAlarm();
+    }
+
+    saveAlarm();
+    redraw = true;
+  }
+
+  // nastavení času HH:MM
+  if (server.hasArg("time")) {
+    String t = server.arg("time");
+    if (t.length() == 5 && t.charAt(2) == ':') {
+      alarm1.hour = t.substring(0, 2).toInt();
+      alarm1.minute = t.substring(3, 5).toInt();
+    saveAlarm();
+    redraw = true;
+    }
+  }
+
+server.sendHeader("Connection", "close");
+  server.send(200, "text/plain", "OK");
+}
+
+// ===== ULOŽENÍ / NAČTENÍ JASU =====
+void loadBrightness() {
+  prefs.begin("display", true);
+  normalBrightness = prefs.getUInt("brightness", 1500);
+  prefs.end();
+
+  brightness = normalBrightness;
+}
+
+void saveBrightness() {
+  prefs.begin("display", false);
+  prefs.putUInt("brightness", brightness);
+  prefs.end();
+
+  normalBrightness = brightness;
+}
+
+// ===== OVLÁDÁNÍ TLAČÍTEK =====
+bool handleButtons(bool& alarmActive, bool nightNow) {
+
+  // 🔴 ochrana proti rychlému mačkání
+  if (millis() < buttonsBlockedUntil) return false;
+
+  // ===== BLOKACE TLAČÍTEK PO VYPNUTÍ ALARMU =====
+  if (millis() < buttonsBlockedUntil) {
+    return false;
+  }
+
+  static unsigned long setPressTime = 0;
+  static bool setHeld = false;
+  static bool longActionDone = false;
+  bool redrawNeeded = false;
+
+  // Pokud budík běží, tlačítka pouze deaktivují alarm
+  // ===== BLOKACE UI během celého buzení =====
+  if (alarmRunning) {
+
+    static unsigned long pressStart = 0;
+    static bool pressed = false;
+
+    // detekce stisku SET
+    if (digitalRead(BTN_SET) == LOW) {
+      if (!pressed) {
+        pressed = true;
+        pressStart = millis();
+      }
+
+      // ===== DLOUHÝ STISK → úplné vypnutí =====
+      if (pressed && millis() - pressStart > 2000) {
+
+        alarmActive = false;
+
+        snoozeCount = 0;
+        alarm1.enabled = false;
+        saveAlarm();
+
+        resetAfterAlarm();
+
+        pressed = false;
+        return true;
+      }
+    } else {  // 🔴 TOTO patří k if(digitalRead...)
+
+      // ===== KRÁTKÝ STISK =====
+      if (pressed) {
+
+        pressed = false;
+
+        if (snoozeTriggeredThisCycle) return false;
+        snoozeTriggeredThisCycle = true;
+
+        alarmActive = false;
+        wakeProcessActive = false;
+        dfPlayer.stop();
+        dfPlayer.volume(0);
+
+        snoozeCount++;
+
+        if (snoozeCount < 3) {
+          snoozeActive = true;
+
+          if (snoozeCount == 1)
+            nextAlarmMillis = millis() + SNOOZE_1;
+          else
+            nextAlarmMillis = millis() + SNOOZE_2;
+        } else {
+          snoozeActive = false;
+          snoozeCount = 0;
+          wakeProcessActive = false;
+
+          alarm1.enabled = false;
+          saveAlarm();
+        }
+
+        buttonsBlockedUntil = millis() + BUTTON_BLOCK_TIME;
+        return true;
+      }
+    }
+
+    // ===== UP / DOWN → taky snooze =====
+    if ((buttonPressed(BTN_UP) || buttonPressed(BTN_DOWN))) {
+
+      if (snoozeTriggeredThisCycle) return false;
+      snoozeTriggeredThisCycle = true;
+
+      alarmActive = false;
+      wakeProcessActive = false;
+      dfPlayer.stop();
+      dfPlayer.volume(0);
+
+      snoozeCount++;
+
+      if (snoozeCount < 3) {
+        snoozeActive = true;
+
+        if (snoozeCount == 1)
+          nextAlarmMillis = millis() + SNOOZE_1;
+        else
+          nextAlarmMillis = millis() + SNOOZE_2;
+      } else {
+        snoozeActive = false;
+        snoozeCount = 0;
+        wakeProcessActive = false;
+
+        alarm1.enabled = false;
+        saveAlarm();
+      }
+
+      buttonsBlockedUntil = millis() + BUTTON_BLOCK_TIME;
+      return true;
+    }
+
+    return false;
+  }
+
+  // ===== NOČNÍ REŽIM – speciální chování =====
+  if (nightNow && !nightModeOverride) {
+
+    // jakékoliv tlačítko = rozsvítit displej
+    if (digitalRead(BTN_SET) == LOW || digitalRead(BTN_UP) == LOW || digitalRead(BTN_DOWN) == LOW) {
+
+      nightWakeActive = true;
+      nightWakeUntil = millis() + NIGHT_WAKE_TIME;
+    }
+
+   // ===== SET – detekce držení =====
+    if (digitalRead(BTN_SET) == LOW && !setHeld) {
+      setHeld = true;
+      setPressTime = millis();
+      longActionDone = false; //  Na začátku stisku vyresetujeme pojistku
+    }
+
+    // dlouhý stisk >2s → vypnutí nočního režimu
+    if (setHeld && digitalRead(BTN_SET) == LOW && millis() - setPressTime > 2000 && !longActionDone) {
+
+      nightModeOverride = true;
+      nightWakeActive = false;
+
+      brightness = normalBrightness;
+      ledcWrite(BACKLIGHT_PIN, brightness);
+
+      longActionDone = true; //  Říkáme systému, ať ignoruje puštění tlačítka
+      buttonsBlockedUntil = millis() + 500;
+      return true; //  Změnili jsme jas, chceme obrazovku hned překreslit
+    }
+
+    // uvolnění
+    if (digitalRead(BTN_SET) == HIGH) {
+      setHeld = false;
+    }
+
+    // ❌ v nočním režimu NIC jiného nedělej
+    return false;
+  }
+
+  int btnState = digitalRead(BTN_SET);
+
+  // tlačítko právě stisknuto
+  if (btnState == LOW && !setHeld) {
+    setPressTime = millis();
+    setHeld = true;
+    longActionDone = false;
+  }
+
+  // tlačítko drženo >3s -> dlouhý stisk (přepnutí budíku)
+  if (setHeld && digitalRead(BTN_SET) == LOW && millis() - setPressTime >= 3000 && !longActionDone && buttonActionAllowed()) {
+
+    alarm1.enabled = !alarm1.enabled;
+
+    //==== DEFINITIVNÍ VYPNUTÍ =====
+    alarmActive = false;
+    snoozeActive = false;
+    snoozeCount = 0;
+    nextAlarmMillis = 0;
+
+    wakeProcessActive = false;  //  ukončení buzení
+
+    dfPlayer.stop();
+    dfPlayer.volume(0);
+
+    if (alarmBrightnessForced) {
+      brightness = normalBrightness;
+      ledcWrite(BACKLIGHT_PIN, brightness);
+      alarmBrightnessForced = false;
+    }
+
+    saveAlarm();
+    longActionDone = true;
+    redrawNeeded = true;
+  }
+
+  // tlačítko uvolněno
+  if (btnState == HIGH && setHeld) {
+    unsigned long pressDuration = millis() - setPressTime;
+    setHeld = false;
+    setPressTime = 0;
+
+    // ❗ pokud už proběhl long press → NIC nedělej
+    if (longActionDone) {
+      longActionDone = false;
+      return redrawNeeded;
+    }
+
+    if (!buttonActionAllowed()) return redrawNeeded;
+
+    if (pressDuration >= 50 && pressDuration < 1000) {
+      lastSettingActivityMillis = millis();
+      if (uiState == SHOW_TIME) {
+        uiState = SET_HOUR;
+        userIsSettingAlarm = true;   // 🚩 PRÁVĚ JSI VSTOUPIL DO NASTAVENÍ
+      } 
+      else if (uiState == SET_HOUR) {
+        uiState = SET_MINUTE;
+        // userIsSettingAlarm zůstává true
+      } 
+      else {
+        uiState = SHOW_TIME;
+        userIsSettingAlarm = false;  // 🚩 PRÁVĚ JSI VYŠEL Z NASTAVENÍ (Budík může začít hlídat)
+        saveAlarm();
+        lastAlarmMinute = -1;
+      }
+      redrawNeeded = true;
+    }
+
+  }
+
+  // UP tlačítko
+  if (buttonPressed(BTN_UP) && buttonActionAllowed()) {
+    lastSettingActivityMillis = millis();
+
+    // 🔆 REGULACE JASU – pouze při normálním zobrazení
+    if (uiState == SHOW_TIME) {
+      uint16_t step = getBrightnessStep(brightness);
+
+      if (brightness + step <= PWM_MAX)
+        brightness += step;
+      else
+        brightness = PWM_MAX;
+
+      ledcWrite(BACKLIGHT_PIN, brightness);
+      saveBrightness();
+    }
+
+    // ⏰ NASTAVENÍ BUDÍKU (zachováno!)
+    if (uiState == SET_HOUR) alarm1.hour = (alarm1.hour + 1) % 24;
+    if (uiState == SET_MINUTE) alarm1.minute = (alarm1.minute + 1) % 60;
+
+    redrawNeeded = true;
+  }
+
+  // DOWN tlačítko
+  if (buttonPressed(BTN_DOWN) && buttonActionAllowed()) {
+    lastSettingActivityMillis = millis();
+
+    // 🔆 REGULACE JASU – pouze při normálním zobrazení
+    // DOWN
+    if (uiState == SHOW_TIME) {
+      uint16_t step = getBrightnessStep(brightness);
+
+      if (brightness >= step)
+        brightness -= step;
+      else
+        brightness = 0;
+
+      ledcWrite(BACKLIGHT_PIN, brightness);
+      saveBrightness();
+    }
+
+    // ⏰ NASTAVENÍ BUDÍKU (zachováno!)
+    if (uiState == SET_HOUR) alarm1.hour = (alarm1.hour + 23) % 24;
+    if (uiState == SET_MINUTE) alarm1.minute = (alarm1.minute + 59) % 60;
+
+    redrawNeeded = true;
+  }
+
+  return redrawNeeded;
+}
+
+// ==== po buzeni návrat do normálu ====
+
+void resetAfterAlarm() {
+
+  alarmRunning = false;
+  wakeProcessActive = false;
+  snoozeActive = false;
+  snoozeCount = 0;
+  nightModeOverride = true;
+
+  dfPlayer.stop();
+  dfPlayer.volume(0);
+
+  // 🔴 DŮLEŽITÉ – vypnout forced brightness
+  alarmBrightnessForced = false;
+
+  // 🔆 návrat jasu
+  brightness = normalBrightness;
+  ledcWrite(BACKLIGHT_PIN, brightness);
+
+  // 🔘 UI zpět
+  uiState = SHOW_TIME;
+  userIsSettingAlarm = false;  // Jistota, že budík začne hlídat čas
+  lastAlarmMinute = -1;       //  Reset paměti poslední minuty buzení
+
+  // 🔴 reset cyklu tlačítek
+  snoozeTriggeredThisCycle = false;
+
+  // ochrana proti ghost klikům
+  buttonsBlockedUntil = millis() + BUTTON_BLOCK_TIME;
+}
+
+// ===== NOČNÍ REŽIM =====
+
+void loadNightMode() {
+  prefs.begin("display", true);
+  nightStartHour = prefs.getUChar("nightStartH", 22);
+  nightStartMinute = prefs.getUChar("nightStartM", 0);
+  nightEndHour = prefs.getUChar("nightEndH", 6);
+  nightEndMinute = prefs.getUChar("nightEndM", 0);
+  nightBrightness = prefs.getUInt("nightB", 500);
+  prefs.end();
+}
+
+void saveNightMode() {
+  prefs.begin("display", false);
+  prefs.putUChar("nightStartH", nightStartHour);
+  prefs.putUChar("nightStartM", nightStartMinute);
+  prefs.putUChar("nightEndH", nightEndHour);
+  prefs.putUChar("nightEndM", nightEndMinute);
+  prefs.putUInt("nightB", nightBrightness);
+  prefs.end();
+}
+
+// ===== ULOŽENÍ / NAČTENÍ NOČNÍHO SVĚTÝLKA =====
+void loadNightLight() {
+  prefs.begin("nlight", true);
+  nlStartHour = prefs.getUChar("startH", 20);
+  nlStartMinute = prefs.getUChar("startM", 0);
+  nlEndHour = prefs.getUChar("endH", 6);
+  nlEndMinute = prefs.getUChar("endM", 0);
+  nlBrightness = prefs.getUChar("bright", 50);
+  prefs.end();
+}
+
+void saveNightLight() {
+  prefs.begin("nlight", false);
+  prefs.putUChar("startH", nlStartHour);
+  prefs.putUChar("startM", nlStartMinute);
+  prefs.putUChar("endH", nlEndHour);
+  prefs.putUChar("endM", nlEndMinute);
+  prefs.putUChar("bright", nlBrightness);
+  prefs.end();
+}
+
+// ===== ULOŽENÍ / NAČTENÍ ČASU FONTÁNKY =====
+void loadFontanka() {
+  prefs.begin("fontanka", true);
+  fontankaStartHour = prefs.getUChar("startH", 10);
+  fontankaStartMinute = prefs.getUChar("startM", 0);
+  fontankaEndHour = prefs.getUChar("endH", 16);
+  fontankaEndMinute = prefs.getUChar("endM", 0);
+  prefs.end();
+}
+
+void saveFontanka() {
+  prefs.begin("fontanka", false);
+  prefs.putUChar("startH", fontankaStartHour);
+  prefs.putUChar("startM", fontankaStartMinute);
+  prefs.putUChar("endH", fontankaEndHour);
+  prefs.putUChar("endM", fontankaEndMinute);
+  prefs.end();
+}
+
+void updateBrightnessForNightMode(struct tm& timeinfo) {
+
+  // 🔴 ALARM má nejvyšší prioritu
+  if (alarmBrightnessForced) {
+    ledcWrite(BACKLIGHT_PIN, PWM_MAX);
+    return;
+  }
+
+  bool active = false;
+
+  int current = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+  int start = nightStartHour * 60 + nightStartMinute;
+  int end = nightEndHour * 60 + nightEndMinute;
+
+  if (start < end) active = current >= start && current < end;
+  else active = current >= start || current < end;
+
+  // 🔁 reset override mimo noční režim
+  if (!active) {
+    nightModeOverride = false;
+  }
+
+  // 👉 override jen potlačí aktivaci, ale NEUKONČÍ funkci
+  if (nightModeOverride) {
+    nightModeActive = false;
+    brightness = normalBrightness;
+  } else {
+    nightModeActive = active;
+    brightness = active ? nightBrightness : normalBrightness;
+  }
+
+  // wake má prioritu
+  if (nightWakeActive) {
+    if (millis() < nightWakeUntil) {
+      ledcWrite(BACKLIGHT_PIN, PWM_MAX);
+      return;
+    } else {
+      nightWakeActive = false;
+    }
+  }
+
+  ledcWrite(BACKLIGHT_PIN, brightness);
+
+  // 🔁 reset override přes den
+  if (!active) {
+    nightModeOverride = false;
+  }
+}
+
+// ==== vykresnení zapnutého (vypnutého) budíku =====
+void drawAlarmBlink(bool alarmActive) {
+
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastBlinkTime > 500) {
+    blinkState = !blinkState;
+    lastBlinkTime = currentMillis;
+  }
+
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_WHITE);
+
+  tft.drawString("Budik", 247, 195);            // nastavei kde bude nápis budík
+  tft.fillRect(215, 215, 150, 150, TFT_BLACK);  // mazání displeje kde je čas budíku 245,225,80,16
+
+  char hourStr[3], minStr[3];
+  sprintf(hourStr, "%02d", alarm1.hour);
+  sprintf(minStr, "%02d", alarm1.minute);
+
+  if (uiState == SET_HOUR) {
+    tft.setTextColor(blinkState ? TFT_GREEN : TFT_BLACK);
+    tft.drawString(hourStr, 245, 215);  // nastavení kde bude čas budíku + další pole dolu
+    tft.setTextColor(TFT_GREEN);
+    tft.drawString(":", 275, 215);
+    tft.drawString(minStr, 285, 215);
+  } else if (uiState == SET_MINUTE) {
+    tft.setTextColor(TFT_GREEN);
+    tft.drawString(hourStr, 245, 215);
+    tft.drawString(":", 275, 215);
+    tft.setTextColor(blinkState ? TFT_GREEN : TFT_BLACK);
+    tft.drawString(minStr, 285, 215);
+  } else {
+    tft.setTextColor(alarm1.enabled ? TFT_GREEN : TFT_RED);
+    char alarmStr[6];
+    sprintf(alarmStr, "%02d:%02d", alarm1.hour, alarm1.minute);
+    tft.drawString(alarmStr, 245, 215);  // konec nastavení času budíku
+  }
+
+  // ===== STAV BUDÍKU – IKONA BUDIKU ,S VYKRESLENIM =====
+  tft.fillRect(160, 0, 25, 25, TFT_BLACK);
+
+  if (!alarm1.enabled) return;
+
+  uint16_t alarmColor;
+
+  if (alarmRunning) {
+    alarmColor = TFT_RED;
+  } else {
+    alarmColor = TFT_GREEN;
+  }
+
+  drawAlarmIcon16(160, 15, alarmColor);
+}
+
+void handleUpdate() {
+  Serial.println(">>> /update prijato");
+
+  if (server.hasArg("temp")) {
+    tempExternal = server.arg("temp").toFloat();
+    lastExternalMillis = millis();
+    Serial.print("OUT temp = ");
+    Serial.println(tempExternal);
+  }
+
+  if (server.hasArg("bat")) {
+    batteryVoltage = server.arg("bat").toFloat();
+    Serial.print("BAT = ");
+    Serial.println(batteryVoltage);
+  }
+
+server.sendHeader("Connection", "close");
+  server.send(200, "text/plain", "OK");
+}
+
+// ==== ikona baterie ====
+void drawBatteryIcon(int x, int y, float voltage) {
+  uint16_t color = getBatteryColor(voltage);
+
+  // obrys baterie
+  tft.drawRect(x, y, 30, 14, TFT_WHITE);
+  // kontakt
+  tft.fillRect(x + 30, y + 4, 3, 6, TFT_WHITE);
+
+  // výplň
+  tft.fillRect(x + 2, y + 2, 26, 10, color);
+}
+
+// ==== funkce pro stažení svátku ====
+
+void fetchTodayName() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi neni pripojena");
+    return;
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();  // ignoruje validitu certifikátu
+
+  HTTPClient https;
+  https.begin(client, "https://svatkyapi.cz/api/day");  // HTTPS
+  https.setTimeout(2000); // Nastaví maximální dobu čekání na 2 sekundy (2000 ms)
+  int httpCode = https.GET();
+  Serial.print("HTTP kod: ");
+  Serial.println(httpCode);
+
+  if (httpCode == 200) {
+    String payload = https.getString();
+    Serial.println("DATA ZE SERVERU:");
+    Serial.println(payload);
+
+    DynamicJsonDocument doc(512);
+    DeserializationError error = deserializeJson(doc, payload);
+    if (error) {
+      Serial.println("JSON chyba");
+      todayName = "";
+    } else {
+      // použít správný klíč
+      todayName = removeDiacritics(doc["name"].as<String>());
+      Serial.print("Svatek: ");
+      Serial.println(todayName);
+    }
+  } else {
+    Serial.println("Chyba pri HTTP requestu");
+    todayName = "";
+  }
+
+  https.end();
+}
+
+// ==== synchronizace času co hodinu ====
+void syncTimeWithNTP() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  Serial.println("⏰ Hodinova NTP synchronizace");
+
+  configTzTime("CET-1CEST,M3.5.0/2,M10.5.0/3", ntpServer);
+}
+
+void sendToThingSpeak(float tOut) {
+  if (WiFi.status() == WL_CONNECTED) {
+    if (isnan(tOut)) return; // Pokud venkovní teplota není platná, nic neposíláme
+
+    WiFiClient client; // Použijeme obyčejný WiFiClient místo WiFiClientSecure
+
+    HTTPClient http;
+    
+    // Odesíláme přes standardní HTTP (bez HTTPS šifrování)
+    String url = "http://api.thingspeak.com/update?api_key=" + apiKey + "&field3=" + String(tOut, 1);
+    
+    http.begin(client, url);
+    http.setTimeout(4000);
+    int httpCode = http.GET(); 
+    
+    if (httpCode > 0) {
+      Serial.print("HTTP kod: ");
+      Serial.println(httpCode);
+      
+      String payload = http.getString();
+      Serial.print("Odpoved ThingSpeak (pokud je 0, data se neuložila): ");
+      Serial.println(payload);
+    } else {
+      Serial.print("Chyba pri odesilani na ThingSpeak. Kod: ");
+      Serial.println(httpCode);
+    }
+    http.end();
+  } else {
+    Serial.println("Nelze odeslat data, WiFi neni pripojena.");
+  }
+}
+
+// == nevim ==
+bool isNightNow(struct tm& timeinfo) {
+  int current = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+  int start = nightStartHour * 60 + nightStartMinute;
+  int end = nightEndHour * 60 + nightEndMinute;
+
+  if (start < end){
+    return current >= start && current < end;
+  } else {
+    return current >= start || current < end;
+  }
+}
+
+bool alarmActive = false;    // stav alarmu
+
+//==============================================================================
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(BTN_SET, INPUT_PULLUP);
+  pinMode(BTN_UP, INPUT_PULLUP);
+  pinMode(BTN_DOWN, INPUT_PULLUP);
+  pinMode(POWER_DETECT_PIN, INPUT);
+  pinMode(ALARM_PIN_LEFT, OUTPUT);
+  
+  // PWM pro noční světýlko (frekvence 1 kHz, rozlišení 8-bit tedy 0-255)
+  ledcAttach(NIGHT_LIGHT_PIN, 1000, 8); 
+  ledcWrite(NIGHT_LIGHT_PIN, 0); // Po startu raději vypnout
+  
+  loadNightLight(); // volání nočního světýlka
+  loadFontanka();  // volání fontánky
+
+  server.enableDelay(false);
+  
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_GREEN);
+  tft.drawString("Spoustim...", 20, 20);
+
+  loadAlarm();
+
+  // ===== PWM PODSVIT (ESP32 core 3.x) =====
+  ledcAttach(BACKLIGHT_PIN, PWM_FREQ, PWM_RESOLUTION);
+  ledcWrite(BACKLIGHT_PIN, brightness);
+
+  loadBrightness();
+  loadNightMode();  // načtení nočního režimu z Preferences
+  ledcWrite(BACKLIGHT_PIN, brightness);
+
+  // ===== WiFi s pevnou IP =====
+  tft.drawString("WiFi...", 20, 50);
+  WiFi.mode(WIFI_STA);
+  delay(100);
+
+  IPAddress local_IP(192, 168, 1, 235);  // pevná IP,jakou zjistím v cmd-ipconfig 	//
+  IPAddress gateway(192, 168, 1, 1);     // adresa routeru				//
+  IPAddress subnet(255, 255, 255, 0);    // maska sítě					// nastavit IP	
+  IPAddress primaryDNS(8, 8, 8, 8);      // Google DNS					//
+  IPAddress secondaryDNS(8, 8, 4, 4);    // Google DNS					//
+
+  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
+    Serial.println("Chyba nastavení statické IP");
+  }
+
+  // připojení k Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  tft.drawString("WiFi OK", 20, 80);
+
+  // načtení svátku hned o startu
+  fetchTodayName();
+  lastNameFetch = millis();
+
+  // spouštění web serveru
+  server.on("/", handleRoot);
+  server.on("/data", handleData);
+  server.on("/favicon.ico", []() { server.send(200, "image/svg+xml", R"rawliteral(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="0.9em" font-size="90">⏰</text></svg>)rawliteral"); });
+  server.on("/update", HTTP_GET, handleUpdate);
+  server.begin();
+
+  // vypíše IP do Serial monitoru
+  Serial.print("HTTP server na IP: ");
+  Serial.println(WiFi.localIP());
+
+  // ==== ovládání budíku z webu ====
+  server.on("/alarm", HTTP_GET, handleAlarmControl);
+
+  // nastavení jasu z webu
+  server.on("/getNightMode", HTTP_GET, []() {
+    String json = "{";
+    json += "\"start\":\"" + twoDigits(nightStartHour) + ":" + twoDigits(nightStartMinute) + "\",";
+    json += "\"end\":\"" + twoDigits(nightEndHour) + ":" + twoDigits(nightEndMinute) + "\",";
+    json += "\"brightness\":" + String(nightBrightness);
+    json += "}";
+    server.sendHeader("Connection", "close");
+    server.send(200, "application/json", json);
+  });
+
+  server.on("/brightness", HTTP_GET, []() {
+    if (server.hasArg("value")) {
+      int perc = server.arg("value").toInt();
+      if (perc < 0) perc = 0;
+      if (perc > 100) perc = 100;
+
+      normalBrightness = (uint16_t)((perc * PWM_MAX) / 100);
+      brightness = normalBrightness;
+      ledcWrite(BACKLIGHT_PIN, brightness);
+      saveBrightness();
+    }
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", "OK");
+  });
+
+  // nastavení nočního režimu
+  server.on("/nightmode", HTTP_GET, []() {
+    if (server.hasArg("start") && server.hasArg("end") && server.hasArg("brightness")) {
+      String s = server.arg("start");  // HH:MM
+      String e = server.arg("end");
+      int b = server.arg("brightness").toInt();
+
+      nightStartHour = s.substring(0, 2).toInt();
+      nightStartMinute = s.substring(3, 5).toInt();
+      nightEndHour = e.substring(0, 2).toInt();
+      nightEndMinute = e.substring(3, 5).toInt();
+      if (b < 0) b = 0;
+      if (b > 4095) b = 4095;
+      nightBrightness = b;
+
+      saveNightMode();
+    }
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", "OK");
+  });
+
+// Načtení dat o světýlku do webu
+  server.on("/getNL", HTTP_GET, []() {
+    String json = "{";
+    json += "\"start\":\"" + twoDigits(nlStartHour) + ":" + twoDigits(nlStartMinute) + "\",";
+    json += "\"end\":\"" + twoDigits(nlEndHour) + ":" + twoDigits(nlEndMinute) + "\",";
+    json += "\"brightness\":" + String(nlBrightness);
+    json += "}";
+    server.sendHeader("Connection", "close");
+    server.send(200, "application/json", json);
+  });
+
+  // Uložení dat o světýlku z webu
+  server.on("/setNL", HTTP_GET, []() {
+    if (server.hasArg("start") && server.hasArg("end") && server.hasArg("brightness")) {
+      String s = server.arg("start");
+      String e = server.arg("end");
+      nlStartHour = s.substring(0, 2).toInt();
+      nlStartMinute = s.substring(3, 5).toInt();
+      nlEndHour = e.substring(0, 2).toInt();
+      nlEndMinute = e.substring(3, 5).toInt();
+      
+      int b = server.arg("brightness").toInt();
+      if (b < 0) b = 0;
+      if (b > 100) b = 100;
+      nlBrightness = b;
+
+      saveNightLight();
+    }
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", "OK");
+  });  
+
+  // Načtení dat o fontánce do webu
+  server.on("/getFontanka", HTTP_GET, []() {
+    String json = "{";
+    json += "\"start\":\"" + twoDigits(fontankaStartHour) + ":" + twoDigits(fontankaStartMinute) + "\",";
+    json += "\"end\":\"" + twoDigits(fontankaEndHour) + ":" + twoDigits(fontankaEndMinute) + "\"";
+    json += "}";
+    server.sendHeader("Connection", "close");
+    server.send(200, "application/json", json);
+  });
+
+  // Uložení dat o fontánce z webu
+  server.on("/setFontanka", HTTP_GET, []() {
+    if (server.hasArg("start") && server.hasArg("end")) {
+      String s = server.arg("start");
+      String e = server.arg("end");
+      fontankaStartHour = s.substring(0, 2).toInt();
+      fontankaStartMinute = s.substring(3, 5).toInt();
+      fontankaEndHour = e.substring(0, 2).toInt();
+      fontankaEndMinute = e.substring(3, 5).toInt();
+      saveFontanka();
+    }
+    server.sendHeader("Connection", "close");
+    server.send(200, "text/plain", "OK");
+  });
+
+// ===== HLAVNÍ API PRO FONTÁNKU =====
+  server.on("/fontankaData", HTTP_GET, []() {
+    struct tm timeinfo;
+    bool hasTime = getLocalTime(&timeinfo);
+
+    // 1. Uložení napětí a času přijetí (pokud je NTP funkční)
+    if (server.hasArg("voltage")) {
+      fontankaBat = server.arg("voltage").toFloat();
+      if (hasTime) {
+        char buf[20];
+        strftime(buf, sizeof(buf), "%d.%m. %H:%M", &timeinfo);
+        fontankaLastTime = String(buf);
+      }
+    }
+
+    // 2. Pokud NTP čas ještě není k dispozici, vrátíme chybu
+    if (!hasTime) {
+      server.send(500, "text/plain", "Chyba casu");
+      return;
+    }
+    
+    // 3. Sestavení JSON odpovědi
+    String json = "{";
+    json += "\"casH\":" + String(timeinfo.tm_hour) + ",";
+    json += "\"casM\":" + String(timeinfo.tm_min) + ",";
+    json += "\"startH\":" + String(fontankaStartHour) + ",";
+    json += "\"startM\":" + String(fontankaStartMinute) + ",";
+    json += "\"endH\":" + String(fontankaEndHour) + ",";
+    json += "\"endM\":" + String(fontankaEndMinute);
+    json += "}";
+    
+    server.sendHeader("Connection", "close");
+    server.send(200, "application/json", json);
+  });
+
+  // NTP
+  configTzTime("CET-1CEST,M3.5.0/2,M10.5.0/3", ntpServer);
+
+  // NTP
+  configTzTime("CET-1CEST,M3.5.0/2,M10.5.0/3", ntpServer);
+  tft.drawString("Cas...", 20, 110);
+  struct tm timeinfo;
+  int retry = 0;
+  while (!getLocalTime(&timeinfo) && retry < 20) {
+    delay(500);
+    retry++;
+  }
+  if (retry < 20) tft.drawString("Cas OK", 20, 140);
+  else tft.drawString("Cas FAIL", 20, 140);
+
+  delay(1000);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+
+  tft.fillScreen(TFT_BLACK);
+
+  // ===== DFPlayer =====
+  dfSerial.begin(9600, SERIAL_8N1, 16, 17);  // RX=16, TX=17
+  if (!dfPlayer.begin(dfSerial)) {
+    Serial.println("DFPlayer nenalezen!");
+  } else {
+    dfPlayer.volume(5);  // hlasitost 0-30          // hlasitost , bylo nastaveno 20
+  }
+
+// ===== DS18B20 INIT =====
+  sensorsInternal.begin();
+
+  // ===== WATCHDOG (ZAPNE SE AŽ PO ÚSPĚŠNÉM STARTU) =====
+  esp_task_wdt_config_t wdt_config = { .timeout_ms = 15000, .idle_core_mask = (1 << portNUM_PROCESSORS) - 1, .trigger_panic = true };
+  esp_task_wdt_init(&wdt_config); 
+  esp_task_wdt_add(NULL); 
+}
+
+//============================================================================================
+void loop() {
+  esp_task_wdt_reset(); 
+  
+  // 1. Vše kolem aktivní WiFi (web server, reconnect i kontrolu IP) řešíme JEN, pokud má být WiFi zapnutá
+  if (wifiEnabled) {
+    server.handleClient();
+
+    // A. Bezpečná kontrola a obnova WiFi (maximálně jednou za 10 vteřin)
+    // Používáme tiché reconnect(), které neshazuje celou kartu a nezatěžuje procesor
+    static unsigned long lastWiFiCheck = 0;
+    if (WiFi.status() != WL_CONNECTED) {
+      if (millis() - lastWiFiCheck > 10000UL) { 
+        lastWiFiCheck = millis();
+        WiFi.reconnect(); 
+        Serial.println("WiFi odpojena, zkousim tichy reconnect...");
+      }
+    }
+
+    // B. KONTROLA SPRÁVNÉ IP ADRESY (každých 5 minut)
+    // Spouští se jen když jsme připojení. Hlídá, zda router nezměnil naši pevnou IP.
+    static unsigned long lastIpCheck = 0;
+    if (WiFi.status() == WL_CONNECTED && (millis() - lastIpCheck > 300000UL)) {
+      lastIpCheck = millis();
+      if (WiFi.localIP() != local_IP) {
+        Serial.println("Chybna IP adresa! Restartuji ESP...");
+        delay(500);    // Krátká pauza, aby se stihl odeslat text do Serial linky
+        ESP.restart(); // Tvrdý restart jako záchranná brzda
+      }
+    }
+  }
+
+  // ===== DETEKCE NAPÁJENÍ (WiFi On/Off) =====
+  bool powerPresent = digitalRead(POWER_DETECT_PIN);
+  
+  // Došlo k odpojení ze sítě -> vypínáme WiFi kvůli úspoře baterie
+  if (!powerPresent && wifiEnabled) {
+    Serial.println("Vypadek napajeni - vypinam WiFi");
+    server.close();
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    wifiEnabled = false;
+  }
+  
+  // Napájení se vrátilo -> zapínáme WiFi zpět
+  if (powerPresent && !wifiEnabled) {
+    Serial.println("Napajeni OK - zapinam WiFi");
+    WiFi.mode(WIFI_STA);
+    WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS);
+    WiFi.begin(ssid, password);
+    
+    unsigned long start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 5000) {
+      // server.handleClient(); // OPRAVENO: Odstraněno, server ještě neběží, způsobovalo to pády ESP32!
+      delay(100);
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+      server.begin();
+      Serial.println("WiFi uspesne obnovena a server bezi.");
+    }
+    wifiEnabled = true;
+  }
+
+// ===== STAV ALARMU A ČAS =====
+  static bool firstDraw = true;
+  static unsigned long alarmStartMillis = 0;
+  alarmRunning = wakeProcessActive || snoozeActive;
+  
+  struct tm timeinfo;
+  bool timeValid = getLocalTime(&timeinfo);
+
+// ===== ODESÍLÁNÍ VENKOVNÍ TEPLOTY NA THINGSPEAK =====
+// První odeslání ihned, další vždy v celé hodině + 1 minuta.
+
+static long lastThingSpeakHourKey = -1;
+
+if (wifiEnabled && timeValid && !isnan(tempExternal)) {
+
+  // Jedinečné číslo aktuální hodiny (včetně dne a roku)
+  long currentHourKey =
+      (long)timeinfo.tm_year * 1000L +
+      (long)timeinfo.tm_yday * 24L +
+      timeinfo.tm_hour;
+
+  // První odeslání ihned.
+  // Další odeslání nejdříve od první minuty nové hodiny.
+  bool firstSend = (lastThingSpeakHourKey == -1);
+  bool correctMinute = (timeinfo.tm_min >= 1);
+
+  if ((firstSend || correctMinute) &&
+      lastThingSpeakHourKey != currentHourKey) {
+
+    Serial.println("Odesilam venkovni teplotu na ThingSpeak...");
+
+    sendToThingSpeak(tempExternal);
+
+    lastThingSpeakHourKey = currentHourKey;
+  }
+}
+
+  static bool lastAlarmRunning = false;
+  if (alarmRunning != lastAlarmRunning) {
+    redraw = true;
+    lastAlarmRunning = alarmRunning;
+  }
+
+  // ==== AUTOMATICKÝ RESET NOČNÍHO REŽIMU POD ČASU NASTAVENEHO NA WEBU ====
+  if (timeValid && timeinfo.tm_hour == 22 && timeinfo.tm_min == 0 && timeinfo.tm_sec < 5) {
+    if (nightModeOverride) {
+      nightModeOverride = false;
+      redraw = true; // Překreslíme, aby se projevila změna jasu
+    }
+  }
+
+  // ==== DFPlayer úplně ticho mimo alarm ====
+  // OPRAVENO: Hlídáme si změnu stavu (lastAlarmActiveState), příkaz odešleme pouze JEDNOU při vypnutí budíku!
+  static bool lastAlarmActiveState = false;
+  if (!alarmActive && lastAlarmActiveState) {
+    dfPlayer.stop();
+    dfPlayer.volume(0);
+  }
+  lastAlarmActiveState = alarmActive;
+
+// ===== OČI – LED diody (Budík) =====
+  digitalWrite(ALARM_PIN_LEFT, alarmRunning ? HIGH : LOW);
+
+  // ===== NOČNÍ SVĚTÝLKO =====
+  if (timeValid) {
+    int currentMin = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+    int startMin = nlStartHour * 60 + nlStartMinute;
+    int endMin = nlEndHour * 60 + nlEndMinute;
+
+    bool nlActiveNow = false;
+    // Logika zohledňující, zda interval přechází přes půlnoc
+    if (startMin < endMin) {
+      nlActiveNow = (currentMin >= startMin && currentMin < endMin);
+    } else {
+      nlActiveNow = (currentMin >= startMin || currentMin < endMin);
+    }
+
+    if (nlActiveNow) {
+      // Přepočet 0-100% na hodnotu PWM 0-255 pro 8-bit rozlišení
+      int pwmValue = map(nlBrightness, 0, 100, 0, 255);
+      ledcWrite(NIGHT_LIGHT_PIN, pwmValue);
+    } else {
+      ledcWrite(NIGHT_LIGHT_PIN, 0); // Mimo čas je světýlko zhasnuté
+    }
+  }
+
+  // Automatické přepínání jasu a NTP synchronizace
+  if (timeValid) {
+    updateBrightnessForNightMode(timeinfo);
+    if (millis() - lastNtpSyncMillis > NTP_SYNC_INTERVAL) {
+      lastNtpSyncMillis = millis();
+      syncTimeWithNTP();
+    }
+  }
+
+  // Měření teploty (každých 5s)
+  static unsigned long lastTempRead = 0;
+  if (millis() - lastTempRead > 5000) {
+    lastTempRead = millis();
+    sensorsInternal.requestTemperatures();
+    
+    float t = sensorsInternal.getTempCByIndex(0);
+    if (t > -50 && t < 85) {
+      tempInternal = t + INTERNAL_TEMP_OFFSET; 
+    } else {
+      tempInternal = NAN;
+    }
+  }
+
+  bool stopAlarm = false;
+
+  // Svátek/Jméno dne (každou hodinu)
+  if (millis() - lastNameFetch > NAME_FETCH_INTERVAL) {
+    lastNameFetch = millis();
+    fetchTodayName();
+  }
+
+  // ===== SPUŠTĚNÍ ALARMU =====
+  if (timeValid && alarm1.enabled && !alarmActive && !snoozeActive && !userIsSettingAlarm) {
+    int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+    int alarmMinutes = alarm1.hour * 60 + alarm1.minute;
+
+    if (currentMinutes == alarmMinutes && lastAlarmMinute != alarmMinutes) {
+      snoozeTriggeredThisCycle = false;
+      alarmActive = true;
+      wakeProcessActive = true;
+      alarmRunning = true;     
+      lastAlarmMinute = alarmMinutes;
+      alarmStartMillis = millis();
+      if (!alarmBrightnessForced) {
+        ledcWrite(BACKLIGHT_PIN, PWM_MAX);
+        alarmBrightnessForced = true;
+      }
+
+      dfPlayer.volume(VOLUME_START);
+      int nahodnaPisen = random(1, 6);  // Vybere náhodné číslo od 1 do 5.
+      dfPlayer.loop(nahodnaPisen);
+      redraw = true;    
+    }
+  }
+
+  // ===== SNOOZE LOGIKA =====
+  if (snoozeActive && !alarmActive && millis() >= nextAlarmMillis) {
+    snoozeTriggeredThisCycle = false;
+    alarmActive = true;
+    wakeProcessActive = true;
+    snoozeActive = false;
+    alarmStartMillis = millis();
+    dfPlayer.volume(VOLUME_START);
+    int nahodnaPisen = random(1, 6);  
+    dfPlayer.loop(nahodnaPisen);
+    redraw = true;   
+  }
+
+  // Automatické ukončení po minutě
+  if (alarmActive && millis() - alarmStartMillis >= 60000) {
+    alarmActive = false;
+    snoozeCount++;
+    if (snoozeCount < 3) {
+      snoozeActive = true;
+      nextAlarmMillis = millis() + (snoozeCount == 1 ? SNOOZE_1 : SNOOZE_2);
+    } else {
+      snoozeCount = 0;
+      alarm1.enabled = false;
+      saveAlarm();
+      resetAfterAlarm();
+    }
+    dfPlayer.stop();
+    dfPlayer.volume(0);
+    stopAlarm = true;
+  }
+
+  // Plynulé zvyšování hlasitosti
+  static unsigned long lastVolumeStep = 0;
+  static uint8_t lastSetVolume = 255; // Paměť poslední odeslané hlasitosti
+
+  if (alarmActive && millis() - lastVolumeStep > 100) {
+    lastVolumeStep = millis();
+    unsigned long elapsed = millis() - alarmStartMillis;
+    uint8_t vol = VOLUME_START + (elapsed * (VOLUME_MAX - VOLUME_START)) / VOLUME_RAMP_TIME;
+    if (vol > VOLUME_MAX) vol = VOLUME_MAX;
+    
+    if (vol != lastSetVolume) {
+      dfPlayer.volume(vol);
+      lastSetVolume = vol;
+    }
+  } else if (!alarmActive) {
+    lastSetVolume = 255; // Reset paměti, když budík nehraje
+  }
+
+  // Pojistka jasu
+  if (!wakeProcessActive && !snoozeActive && alarmBrightnessForced) {
+    resetAfterAlarm();
+  }
+
+  // ===== TLAČÍTKA A PŘEKRESLOVÁNÍ =====
+  bool nightNow = timeValid ? isNightNow(timeinfo) : false;
+  
+  // Tady se rozhodne, jestli kreslit 
+  redraw = redraw || handleButtons(alarmActive, nightNow) || firstDraw || stopAlarm;
+
+  // ===== TIMEOUT PRO NASTAVOVÁNÍ BUDÍKU (5 sekund) =====
+  if (uiState != SHOW_TIME) {
+    if (millis() - lastSettingActivityMillis >= SETTING_TIMEOUT) {
+      uiState = SHOW_TIME;
+      userIsSettingAlarm = false; 
+      saveAlarm();                
+      lastAlarmMinute = -1;
+      redraw = true;
+    }
+  }
+
+  if (timeValid && timeinfo.tm_min != lastMinute) redraw = true;
+
+  // POMALÉ BLIKÁNÍ V NASTAVENÍ (každých 500ms)
+  if (uiState != SHOW_TIME) {
+    static unsigned long lastBlink = 0;
+    if (millis() - lastBlink > 500) {
+      lastBlink = millis();
+      redraw = true;
+    }
+  }
+
+  // Timeout pro data z venkovního ESP32 (30 minut)
+  // OPRAVENO: Přesunuto SEM před bránu vykreslování, aby vypršení okamžitě vyvolalo správný překresl displeje
+  if (!isnan(tempExternal) && (millis() - lastExternalMillis > 30 * 60 * 1000UL)) {
+    tempExternal = NAN;       // Změní teplotu na --,-
+    batteryVoltage = NAN;     // Ikona baterie bude šedá
+    redraw = true;            // Vynutíme okamžité překreslení
+  }
+
+// ===== Brána vykreslování: propustí kód jen při požadavku na změnu =====
+  if (!redraw) return;
+  redraw = false;      
+  firstDraw = false;
+  if (timeValid) lastMinute = timeinfo.tm_min;
+
+  // ===== Vykreslení displeje =====
+  if (uiState == SHOW_TIME) tft.fillScreen(TFT_BLACK);
+  else tft.fillRect(80, 150, 160, 40, TFT_BLACK);
+
+  // Datum
+  tft.setTextSize(2);
+  tft.setTextColor(TFT_WHITE);
+  if (timeValid) {
+    char dateStr[12];
+    strftime(dateStr, sizeof(dateStr), "%d.%m.%Y", &timeinfo);
+    tft.drawString(dateStr, 15, 15);
+  } else tft.drawString("Cekam na cas...", 5, 5);
+
+  // Ikona baterie
+  drawBatteryIcon(270, 15, batteryVoltage);
+
+  // Dny, svátky
+  if (timeValid) {
+    tft.drawString(dnyVTydnu[timeinfo.tm_wday], 235, 35);
+    if (todayName.length()) tft.drawString(todayName, 15, 35);
+  }
+
+  // Teploty
+  tft.setTextSize(2);
+
+  // ==== vnitřní ====
+  if (!isnan(tempInternal)) {
+    char buf[20];
+    tft.setTextColor(getIndoorTempColor(tempInternal), TFT_BLACK);
+    snprintf(buf, sizeof(buf), "U postele: %.1f %cC", tempInternal, 247);		// nápis když zobrazuje měřenou hodnotu
+    tft.drawString(buf, 15, 195);
+  } else {
+    char buf[20];
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);     					// barva když zobrazuje --:--
+    snprintf(buf, sizeof(buf), "U postele: --,- %cC", 247); 				// nápis když zobrazuje --:--
+    tft.drawString(buf, 15, 195);
+  }
+
+  // ==== venkovní ====
+  if (!isnan(tempExternal)) {
+    char buf[20];
+    tft.setTextColor(getOutdoorTempColor(tempExternal), TFT_BLACK);
+    snprintf(buf, sizeof(buf), "U krbu: %.1f %cC", tempExternal, 247);			// nápis když zobrazuje měřenou hodnotu
+    tft.drawString(buf, 15, 215);
+  } else {
+    char buf[20];
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);    						 // barva když zobrazuje --:--
+    snprintf(buf, sizeof(buf), "U krbu: --,- %cC", 247);  				// nápis když zobrazuje --:--
+    tft.drawString(buf, 15, 215);       
+  }
+
+  // Čas
+  if (timeValid) {
+    char timeStr[6];
+    strftime(timeStr, sizeof(timeStr), "%H:%M", &timeinfo);
+    tft.setTextSize(7);
+    tft.setTextColor(TFT_CYAN);
+    tft.drawString(timeStr, 60, 90);
+  } else {
+    tft.setTextSize(4);
+    tft.setTextColor(TFT_RED);
+    tft.drawString("--:--", 60, 90);
+  }
+
+  // ==== Hláška při zvonění  ====
+  if (alarmRunning) {
+    tft.fillRect(0, 160, 320, 25, TFT_BLACK);  // smaže celý řádek
+
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_RED, TFT_BLACK);       // barva písma
+    tft.drawCentreString("Rozinko vstavej !!!", 160, 155, 2);   // text
+  }
+
+  // Budík s blikáním a stavem
+  drawAlarmBlink(alarmRunning);
+
+  // ==== watchdog
+  esp_task_wdt_reset(); 
+}
