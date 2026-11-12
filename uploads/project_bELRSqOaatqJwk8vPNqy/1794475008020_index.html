@@ -1,0 +1,2358 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Správce Projektů & Návodů (ESP32 / Tech)</title>
+    
+    <!-- Google Fonts & Font Awesome Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Quill.js Editor CSS -->
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css">
+
+    <!-- Firebase Compatibility SDKs (App & Firestore) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <!-- Highlight.js pro zvýraznění kódu v Quill editoru -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <!-- Quill.js Editor JS -->
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --sidebar-bg: #1e293b;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-color: #38bdf8;
+            --accent-hover: #0284c7;
+            --danger-color: #ef4444;
+            --success-color: #22c55e;
+            --warning-color: #f59e0b;
+            --archive-color: #a855f7;
+            --folder-color: #eab308;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Sidebar Overlay pro mobil */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(2px);
+            z-index: 98;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: 290px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--card-border);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            flex-shrink: 0;
+            transition: transform 0.3s ease;
+            z-index: 99;
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin-bottom: 25px;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn-close-sidebar {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.3rem;
+            cursor: pointer;
+        }
+
+        .project-section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn-add-project {
+            background: none;
+            border: none;
+            color: var(--accent-color);
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .project-list {
+            list-style: none;
+            overflow-y: auto;
+            max-height: 40vh;
+        }
+
+        .project-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            cursor: grab;
+            color: var(--text-secondary);
+            transition: background-color 0.2s, color 0.2s;
+        }
+
+        .project-item:active {
+            cursor: grabbing;
+        }
+
+        .project-item.dragging {
+            opacity: 0.4;
+        }
+
+        .project-item:hover, .project-item.active {
+            background-color: #334155;
+            color: var(--text-primary);
+        }
+
+        .project-item.active {
+            border-left: 4px solid var(--accent-color);
+        }
+
+        .project-item.archived {
+            opacity: 0.75;
+            font-style: italic;
+            cursor: pointer;
+        }
+
+        .project-item.archived.active {
+            border-left: 4px solid var(--archive-color);
+        }
+
+        .project-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .project-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow-y: auto;
+            background-color: var(--bg-color);
+        }
+
+        .top-nav {
+            background-color: var(--sidebar-bg);
+            border-bottom: 1px solid var(--card-border);
+            padding: 16px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .mobile-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .project-title-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .project-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .archived-tag {
+            background-color: rgba(168, 85, 247, 0.2);
+            color: #c084fc;
+            border: 1px solid var(--archive-color);
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .nav-tabs {
+            display: flex;
+            gap: 8px;
+            background: #0f172a;
+            padding: 4px;
+            border-radius: 8px;
+            border: 1px solid var(--card-border);
+        }
+
+        .tab-btn {
+            padding: 8px 14px;
+            border: none;
+            background: none;
+            color: var(--text-secondary);
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .tab-btn.active {
+            background-color: var(--accent-color);
+            color: #0f172a;
+            font-weight: 600;
+        }
+
+        .content-body {
+            padding: 30px;
+            max-width: 1100px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Buttons & Forms */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .btn-primary {
+            background-color: var(--accent-color);
+            color: #0f172a;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background-color: #334155;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: #475569;
+        }
+
+        .btn-archive {
+            background-color: rgba(168, 85, 247, 0.2);
+            color: #c084fc;
+            border: 1px solid var(--archive-color);
+        }
+
+        .btn-archive:hover {
+            background-color: rgba(168, 85, 247, 0.35);
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
+            color: white;
+        }
+
+        .btn-icon {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 6px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .btn-icon:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        .project-actions-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--card-border);
+            flex-wrap: wrap;
+        }
+
+        /* Info Box Style */
+        .info-box {
+            background-color: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: var(--text-secondary);
+            padding: 14px 18px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            line-height: 1.5;
+        }
+
+        .info-box i {
+            color: var(--accent-color);
+            margin-top: 3px;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+
+        .info-box strong {
+            color: var(--text-primary);
+        }
+
+        /* Tasks Section */
+        .tasks-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .task-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            cursor: grab;
+            transition: transform 0.1s;
+        }
+
+        .task-card:active {
+            cursor: grabbing;
+        }
+
+        .task-card.dragging {
+            opacity: 0.4;
+        }
+
+        .task-main-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+        }
+
+        .task-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-grow: 1;
+        }
+
+        .task-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: var(--accent-color);
+            flex-shrink: 0;
+        }
+
+        .task-title {
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+
+        .task-title.completed {
+            text-decoration: line-through;
+            color: var(--text-secondary);
+        }
+
+        .task-description {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            padding-left: 34px;
+            white-space: pre-wrap;
+            line-height: 1.4;
+            border-top: 1px dashed rgba(255, 255, 255, 0.05);
+            padding-top: 8px;
+            margin-top: 2px;
+        }
+
+        .task-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-p1 { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .badge-p2 { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+        .badge-p3 { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+
+        /* File & Folder System Styles */
+        .folder-breadcrumbs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            padding: 10px 16px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+            flex-wrap: wrap;
+        }
+
+        .breadcrumb-item {
+            color: var(--accent-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+        }
+
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumb-separator {
+            color: var(--text-secondary);
+        }
+
+        .breadcrumb-active {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .folder-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .folder-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .folder-card:hover {
+            background-color: #334155;
+            border-color: var(--folder-color);
+        }
+
+        .folder-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .folder-info i {
+            color: var(--folder-color);
+            font-size: 1.2rem;
+        }
+
+        /* Rich Text Editor (Quill Dark Overrides) */
+        .editor-container-wrapper {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            border: 1px solid var(--card-border);
+            overflow: hidden;
+        }
+
+        .ql-toolbar.ql-snow {
+            background-color: #334155 !important;
+            border: none !important;
+            border-bottom: 1px solid var(--card-border) !important;
+        }
+
+        .ql-snow .ql-stroke { stroke: var(--text-primary) !important; }
+        .ql-snow .ql-fill { fill: var(--text-primary) !important; }
+        .ql-snow .ql-picker { color: var(--text-primary) !important; }
+
+        #editor {
+            min-height: 350px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            border: none !important;
+        }
+
+        /* File Upload & Code Section */
+        .upload-area {
+            border: 2px dashed var(--card-border);
+            border-radius: 10px;
+            padding: 24px;
+            text-align: center;
+            background-color: var(--card-bg);
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .upload-area:hover {
+            border-color: var(--accent-color);
+        }
+
+        .file-list {
+            list-style: none;
+        }
+
+        .file-item {
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            padding: 14px 18px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .file-header-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .code-preview {
+            background: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 12px;
+            max-height: 350px;
+            overflow: auto;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            color: #38bdf8;
+            display: none;
+        }
+
+        .image-preview-container {
+            background: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+            display: none;
+        }
+
+        .image-preview-container img {
+            max-width: 100%;
+            max-height: 350px;
+            border-radius: 4px;
+            object-fit: contain;
+        }
+
+        .pdf-preview-container {
+            background: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 12px;
+            display: none;
+        }
+
+        .pdf-preview-container iframe {
+            width: 100%;
+            height: 450px;
+            border: none;
+            border-radius: 4px;
+        }
+
+        .doc-preview-container {
+            background: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            padding: 20px;
+            text-align: center;
+            display: none;
+            color: var(--text-secondary);
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .modal-content {
+            background-color: var(--sidebar-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 500px;
+        }
+
+        .modal-header {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid var(--card-border);
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+
+        textarea.form-control {
+            resize: vertical;
+            min-height: 90px;
+        }
+
+        /* Firebase Config Alert Banner */
+        .config-warning {
+            background-color: rgba(245, 158, 11, 0.15);
+            border: 1px solid var(--warning-color);
+            color: #fbbf24;
+            padding: 12px 18px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: -290px;
+                top: 0; bottom: 0;
+                width: 290px;
+                box-shadow: 4px 0 15px rgba(0,0,0,0.5);
+            }
+            .sidebar.open {
+                transform: translateX(290px);
+            }
+            .mobile-toggle {
+                display: block;
+            }
+            .btn-close-sidebar {
+                display: block;
+            }
+            .top-nav {
+                padding: 12px 15px;
+            }
+            .content-body {
+                padding: 15px;
+            }
+            .nav-tabs {
+                width: 100%;
+                justify-content: space-around;
+            }
+            .tab-btn {
+                padding: 6px 10px;
+                font-size: 0.8rem;
+            }
+            .tab-btn i {
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Overlay na pozadí pro zavření menu na mobilu -->
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+    <!-- Sidebar Menu -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-brand">
+                <i class="fa-solid fa-microchip"></i>
+                <span>ESP32 Projekty</span>
+            </div>
+            <button class="btn-close-sidebar" onclick="closeSidebar()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <!-- Rozpracované projekty -->
+        <div class="project-section-title">
+            <span>Rozpracované Projekty</span>
+            <button class="btn-add-project" onclick="openProjectModal()"><i class="fa-solid fa-plus"></i></button>
+        </div>
+        <ul class="project-list" id="project-list-active">
+            <!-- Dynamicky generované aktivní projekty -->
+        </ul>
+
+        <!-- Archivované projekty -->
+        <div class="project-section-title" style="margin-top: 25px; border-top: 1px solid var(--card-border); padding-top: 15px;">
+            <span><i class="fa-solid fa-box-archive"></i> Archivované Projekty</span>
+        </div>
+        <ul class="project-list" id="project-list-archived">
+            <!-- Dynamicky generované archivované projekty -->
+        </ul>
+    </aside>
+
+    <!-- Main Workspace Area -->
+    <main class="main-content">
+        <!-- Top Navigation Header -->
+        <header class="top-nav">
+            <div class="project-title-container">
+                <button class="mobile-toggle" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+                <h1 class="project-title" id="current-project-title">Vyberte projekt</h1>
+                <span id="current-project-archived-badge" class="archived-tag" style="display: none;">
+                    <i class="fa-solid fa-box-archive"></i> Archivováno
+                </span>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <nav class="nav-tabs">
+                <button class="tab-btn active" onclick="switchTab('tasks')">
+                    <i class="fa-solid fa-list-check"></i> Úkoly
+                </button>
+                <button class="tab-btn" onclick="switchTab('docs')">
+                    <i class="fa-solid fa-file-lines"></i> Návody & Materiál
+                </button>
+                <button class="tab-btn" onclick="switchTab('files')">
+                    <i class="fa-solid fa-code"></i> Kódy & Soubory
+                </button>
+            </nav>
+        </header>
+
+        <div class="content-body">
+            <!-- Firebase Warning Banner -->
+            <div id="firebase-warning" class="config-warning" style="display: none;">
+                <i class="fa-solid fa-triangle-exclamation fa-lg"></i>
+                <div>
+                    <strong>Pozor:</strong> Běží v lokálním režimu.
+                </div>
+            </div>
+
+            <!-- Lišta akcí s celým projektem -->
+            <div class="project-actions-bar" id="project-actions-bar">
+                <button class="btn btn-secondary" onclick="editCurrentProjectName()">
+                    <i class="fa-solid fa-pen-to-square"></i> Upravit projekt
+                </button>
+                <button class="btn btn-archive" id="btn-toggle-archive-project" onclick="toggleArchiveCurrentProject()">
+                    <i class="fa-solid fa-box-archive"></i> Přesunout do archivu
+                </button>
+                <button class="btn btn-danger" onclick="deleteCurrentProject()" style="margin-left: auto;">
+                    <i class="fa-solid fa-trash"></i> Smazat projekt
+                </button>
+            </div>
+
+            <!-- TAB 1: TASKS / ÚKOLY -->
+            <section id="tab-tasks" class="tab-content active">
+                <div class="tasks-header">
+                    <h2>Úkoly projektu</h2>
+                    <button class="btn btn-primary" onclick="openTaskModal()">
+                        <i class="fa-solid fa-plus"></i> Přidat úkol
+                    </button>
+                </div>
+
+                <div id="tasks-container">
+                    <!-- Seznam úkolů -->
+                </div>
+            </section>
+
+            <!-- TAB 2: DOCUMENTATION / NÁVODY & MATERIÁL -->
+            <section id="tab-docs" class="tab-content">
+                <div class="tasks-header">
+                    <h2>Projektová dokumentace, materiál a návody</h2>
+                    <button class="btn btn-primary" onclick="saveDocumentation()">
+                        <i class="fa-solid fa-floppy-disk"></i> Uložit dokumentaci
+                    </button>
+                </div>
+
+                <div class="editor-container-wrapper">
+                    <div id="editor"></div>
+                </div>
+            </section>
+
+            <!-- TAB 3: FILES & FOLDERS / SOUBORY A PODSLOŽKY -->
+            <section id="tab-files" class="tab-content">
+                <!-- Informační box -->
+                <div class="info-box">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <div>
+                        <strong>Pravidla pro nahrávání souborů:</strong> Fotky se automaticky zmenšují a posílají na GitHub. Větší soubory jak 1MB musíte nahrát lokálně z PC přímo do repozitáře přes Git.
+                    </div>
+                </div>
+
+                <div class="tasks-header">
+                    <h2>Přiložené soubory, 3D modely a složky</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-secondary" onclick="openFolderModal()">
+                            <i class="fa-solid fa-folder-plus" style="color: var(--folder-color);"></i> Nová složka
+                        </button>
+                        <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+                            <i class="fa-solid fa-upload"></i> Nahrát soubor / foto / 3D model
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Breadcrumbs -->
+                <div class="folder-breadcrumbs" id="folder-breadcrumbs"></div>
+
+                <!-- Složky -->
+                <div class="folder-grid" id="folder-grid"></div>
+
+                <!-- Upload Area -->
+                <div class="upload-area" onclick="document.getElementById('file-input').click()">
+                    <i class="fa-solid fa-file-arrow-up fa-2x" style="color: var(--accent-color); margin-bottom: 10px;"></i>
+                    <p>Klikněte pro nahrání souborů (fotky se zmenší automaticky, soubory větší jak 1MB je nutno odeslat lokálně z PC přes Git)</p>
+                    <input type="file" id="file-input" style="display: none;" onchange="uploadFile(event)">
+                </div>
+
+                <!-- Soubory -->
+                <ul class="file-list" id="file-list"></ul>
+            </section>
+        </div>
+    </main>
+
+    <!-- MODALY -->
+    <div class="modal" id="modal-project">
+        <div class="modal-content">
+            <div class="modal-header" id="project-modal-title">Vytvořit nový projekt</div>
+            <input type="hidden" id="project-edit-id" value="">
+            <div class="form-group">
+                <label>Název projektu</label>
+                <input type="text" id="project-name-input" class="form-control" placeholder="např. ESP32 Meteostanice">
+            </div>
+            <div class="form-group">
+                <label>Barva projektu</label>
+                <input type="color" id="project-color-input" class="form-control" value="#38bdf8" style="height: 40px; padding: 2px;">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-project')">Zrušit</button>
+                <button class="btn btn-primary" onclick="saveProject()">Uložit projekt</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="modal-folder">
+        <div class="modal-content">
+            <div class="modal-header">Vytvořit novou složku</div>
+            <div class="form-group">
+                <label>Název složky</label>
+                <input type="text" id="folder-name-input" class="form-control" placeholder="např. Knihovny, Schemata">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-folder')">Zrušit</button>
+                <button class="btn btn-primary" onclick="createFolder()">Vytvořit složku</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="modal-task">
+        <div class="modal-content">
+            <div class="modal-header" id="task-modal-title">Přidat nový úkol</div>
+            <input type="hidden" id="task-edit-id" value="">
+            <div class="form-group">
+                <label>Název úkolu</label>
+                <input type="text" id="task-title-input" class="form-control" placeholder="např. Zapojit OLED displej">
+            </div>
+            <div class="form-group">
+                <label>Priorita</label>
+                <select id="task-priority-input" class="form-control">
+                    <option value="p3">Nízká</option>
+                    <option value="p2" selected>Střední</option>
+                    <option value="p1">Vysoká</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Podrobný popis / Poznámky</label>
+                <textarea id="task-desc-input" class="form-control" placeholder="Popis úkolu..."></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-task')">Zrušit</button>
+                <button class="btn btn-primary" onclick="saveTask()">Uložit úkol</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="modal-move">
+        <div class="modal-content">
+            <div class="modal-header" id="move-modal-title">Přesunout položku</div>
+            <input type="hidden" id="move-item-id" value="">
+            <input type="hidden" id="move-item-type" value="">
+            
+            <div class="form-group">
+                <label>Vyberte cílový projekt:</label>
+                <select id="move-target-project-select" class="form-control" onchange="updateMoveFolderOptions()"></select>
+            </div>
+
+            <div class="form-group" id="move-folder-select-group" style="display: none;">
+                <label>Vyberte cílovou složku:</label>
+                <select id="move-target-folder-select" class="form-control"></select>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-move')">Zrušit</button>
+                <button class="btn btn-primary" onclick="confirmMoveItem()">Přesunout</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL PRO PŘEJMENOVÁNÍ SOUBORU -->
+    <div class="modal" id="modal-rename-file">
+        <div class="modal-content">
+            <div class="modal-header">Přejmenovat soubor</div>
+            <input type="hidden" id="rename-file-id" value="">
+            <div class="form-group">
+                <label>Zadejte nový název souboru:</label>
+                <input type="text" id="rename-file-input" class="form-control" placeholder="např. Zapojení senzoru.jpg">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-rename-file')">Zrušit</button>
+                <button class="btn btn-primary" onclick="confirmRenameFile()">Přejmenovat</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // =========================================================================
+        // 1. GITHUB KONFIGURACE PRO UKLÁDÁNÍ SOUBORŮ
+        // =========================================================================
+        const GITHUB_CONFIG = {
+            owner: "ElPinduska",
+            repo: "Blbovnik-ulozene_soubory",
+            branch: "main",
+            token: "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" // Zde vložte svůj osobní GitHub token
+        };
+
+        // =========================================================================
+        // 2. KONFIGURACE FIREBASE (pouze pro databázi úkolů a textů)
+        // =========================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDFFT0K25p_NkrwjKz5tbLzCsV537Fp2RQ",
+            authDomain: "blbovnik.firebaseapp.com",
+            projectId: "blbovnik",
+            storageBucket: "blbovnik.firebasestorage.app",
+            messagingSenderId: "456657622324",
+            appId: "1:456657622324:web:9e2f4327ab83e31b1f4161"
+        };
+
+        let db = null;
+        let isFirebaseActive = false;
+
+        let firebaseProjects = JSON.parse(localStorage.getItem('cache_projects') || '[]');
+        let firebaseTasks = JSON.parse(localStorage.getItem('cache_tasks') || '[]');
+        let firebaseFolders = JSON.parse(localStorage.getItem('cache_folders') || '[]');
+        let firebaseFiles = []; 
+        let localFiles = JSON.parse(localStorage.getItem('cache_local_files') || '[]');
+
+        if (firebaseConfig.apiKey !== "VASE_API_KEY") {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+                console.warn("Firestore persistence error:", err.code);
+            });
+            isFirebaseActive = true;
+        } else {
+            document.getElementById('firebase-warning').style.display = 'flex';
+        }
+
+        // =========================================================================
+        // 3. INICIALIZACE EDITORU QUILL
+        // =========================================================================
+        hljs.configure({ languages: ['cpp', 'python', 'javascript', 'html', 'bash'] });
+
+        const quill = new Quill('#editor', {
+            theme: 'snow',
+            placeholder: 'Zde pište návody, schémata zapojení, použitý materiál nebo kód pro ESP32...',
+            modules: {
+                syntax: true,
+                toolbar: [
+                    [{ 'header': [1, 2, 3, false] }],
+                    ['bold', 'italic', 'underline', 'strike'],
+                    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                    ['code-block'],
+                    ['clean']
+                ]
+            }
+        });
+
+        // App State
+        let currentProjectId = null;
+        let currentFolderId = 'root';
+
+        let localProjects = [
+            { id: 'p1', name: 'ESP32 Weather Station', color: '#38bdf8', archived: false, order: 0, docContent: '<h3>Návod k meteostanici</h3><p>Připojte senzor <b>BME280</b> na I2C piny GPIO21 (SDA) a GPIO22 (SCL).</p>' },
+            { id: 'p2', name: 'Starý projekt Arduino', color: '#a855f7', archived: true, order: 1, docContent: '<p>Tento projekt je dokončen a přesunut do archivu.</p>' }
+        ];
+        let localTasks = [
+            { id: 't1', projectId: 'p1', title: 'Poséct', description: 'Poséct trávu kolem dříví a u plotu', completed: false, priority: 'p2', order: 0 },
+            { id: 't2', projectId: 'p1', title: 'Dřevník', description: 'Rovnat dříví do zadní části dřevníku', completed: false, priority: 'p2', order: 1 }
+        ];
+        let localFolders = [];
+
+        // UI Helpers
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('sidebar-overlay').classList.toggle('active');
+        }
+
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('sidebar-overlay').classList.remove('active');
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.currentTarget.classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+        }
+
+        function openProjectModal(projectId = null) {
+            const modal = document.getElementById('modal-project');
+            const titleInput = document.getElementById('project-name-input');
+            const colorInput = document.getElementById('project-color-input');
+            const editIdInput = document.getElementById('project-edit-id');
+            const modalTitle = document.getElementById('project-modal-title');
+
+            if (projectId) {
+                const projects = isFirebaseActive ? firebaseProjects : localProjects;
+                const p = projects.find(proj => proj.id === projectId);
+                if (p) {
+                    modalTitle.innerText = 'Upravit název projektu';
+                    editIdInput.value = p.id;
+                    titleInput.value = p.name;
+                    colorInput.value = p.color || '#38bdf8';
+                }
+            } else {
+                modalTitle.innerText = 'Vytvořit nový projekt';
+                editIdInput.value = '';
+                titleInput.value = '';
+                colorInput.value = '#38bdf8';
+            }
+
+            modal.style.display = 'flex';
+        }
+
+        function editCurrentProjectName() {
+            if (currentProjectId) openProjectModal(currentProjectId);
+        }
+
+        function openTaskModal(taskId = null) {
+            const modal = document.getElementById('modal-task');
+            const modalTitle = document.getElementById('task-modal-title');
+            const editIdInput = document.getElementById('task-edit-id');
+            const titleInput = document.getElementById('task-title-input');
+            const priorityInput = document.getElementById('task-priority-input');
+            const descInput = document.getElementById('task-desc-input');
+
+            if (taskId) {
+                const tasks = isFirebaseActive ? firebaseTasks : localTasks;
+                const task = tasks.find(t => t.id === taskId);
+                if (task) {
+                    modalTitle.innerText = 'Upravit úkol';
+                    editIdInput.value = task.id;
+                    titleInput.value = task.title || '';
+                    priorityInput.value = task.priority || 'p2';
+                    descInput.value = task.description || '';
+                }
+            } else {
+                modalTitle.innerText = 'Přidat nový úkol';
+                editIdInput.value = '';
+                titleInput.value = '';
+                priorityInput.value = 'p2';
+                descInput.value = '';
+            }
+
+            modal.style.display = 'flex';
+        }
+
+        function openFolderModal() {
+            if (!currentProjectId) return alert('Nejprve vyberte projekt!');
+            document.getElementById('folder-name-input').value = '';
+            document.getElementById('modal-folder').style.display = 'flex';
+        }
+
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+        // =========================================================================
+        // 4. SPRÁVA PROJEKTŮ A ARCHIVACE + DRAG & DROP ŘAZENÍ
+        // =========================================================================
+        let draggedProjectId = null;
+
+        function handleProjectDragStart(e, id) {
+            draggedProjectId = id;
+            e.dataTransfer.effectAllowed = 'move';
+            setTimeout(() => e.target.classList.add('dragging'), 0);
+        }
+
+        function handleProjectDragEnd(e) {
+            e.target.classList.remove('dragging');
+            draggedProjectId = null;
+        }
+
+        function handleProjectDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        function handleProjectDrop(e, targetId) {
+            e.preventDefault();
+            if (!draggedProjectId || draggedProjectId === targetId) return;
+
+            let projects = isFirebaseActive ? firebaseProjects : localProjects;
+            let activeProjects = projects.filter(p => !p.archived);
+            activeProjects.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            const draggedIdx = activeProjects.findIndex(p => p.id === draggedProjectId);
+            const targetIdx = activeProjects.findIndex(p => p.id === targetId);
+
+            if (draggedIdx === -1 || targetIdx === -1) return;
+
+            const [movedItem] = activeProjects.splice(draggedIdx, 1);
+            activeProjects.splice(targetIdx, 0, movedItem);
+
+            activeProjects.forEach((p, index) => {
+                p.order = index;
+                if (isFirebaseActive) {
+                    db.collection('projects').doc(p.id).update({ order: index });
+                }
+            });
+
+            if (!isFirebaseActive) {
+                localStorage.setItem('cache_local_projects', JSON.stringify(localProjects));
+            }
+            renderProjects();
+        }
+
+        function renderProjects() {
+            const activeList = document.getElementById('project-list-active');
+            const archivedList = document.getElementById('project-list-archived');
+            
+            activeList.innerHTML = '';
+            archivedList.innerHTML = '';
+
+            const projectsToRender = isFirebaseActive ? firebaseProjects : localProjects;
+            projectsToRender.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            const activeProjects = projectsToRender.filter(p => !p.archived);
+            const archivedProjects = projectsToRender.filter(p => p.archived);
+
+            if (activeProjects.length === 0) {
+                activeList.innerHTML = '<li style="padding: 10px; color: var(--text-secondary); font-size: 0.85rem;">Žádné rozpracované projekty</li>';
+            } else {
+                activeProjects.forEach(p => activeList.appendChild(createProjectListItem(p)));
+            }
+
+            if (archivedProjects.length === 0) {
+                archivedList.innerHTML = '<li style="padding: 10px; color: var(--text-secondary); font-size: 0.85rem;">Archiv je prázdný</li>';
+            } else {
+                archivedProjects.forEach(p => archivedList.appendChild(createProjectListItem(p, true)));
+            }
+        }
+
+        function createProjectListItem(p, isArchived = false) {
+            const li = document.createElement('li');
+            li.className = `project-item ${p.id === currentProjectId ? 'active' : ''} ${isArchived ? 'archived' : ''}`;
+            
+            if (!isArchived) {
+                li.setAttribute('draggable', 'true');
+                li.ondragstart = (e) => handleProjectDragStart(e, p.id);
+                li.ondragend = (e) => handleProjectDragEnd(e);
+                li.ondragover = (e) => handleProjectDragOver(e);
+                li.ondrop = (e) => handleProjectDrop(e, p.id);
+            }
+
+            li.onclick = (e) => {
+                selectProject(p.id);
+            };
+
+            li.innerHTML = `
+                <div class="project-info">
+                    <div class="project-color" style="background-color: ${p.color || '#38bdf8'}"></div>
+                    <span>${escapeHtml(p.name)}</span>
+                </div>
+                ${isArchived ? '<i class="fa-solid fa-box-archive" style="font-size: 0.8rem; color: #c084fc;"></i>' : '<i class="fa-solid fa-grip-vertical" style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.5;"></i>'}
+            `;
+            return li;
+        }
+
+        function selectProject(id) {
+            currentProjectId = id;
+            currentFolderId = 'root';
+
+            renderProjects();
+
+            const projects = isFirebaseActive ? firebaseProjects : localProjects;
+            const project = projects.find(p => p.id === id);
+
+            if (project) {
+                document.getElementById('current-project-title').innerText = project.name;
+                
+                const archiveBadge = document.getElementById('current-project-archived-badge');
+                const btnToggleArchive = document.getElementById('btn-toggle-archive-project');
+
+                if (project.archived) {
+                    archiveBadge.style.display = 'inline-flex';
+                    btnToggleArchive.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Obnovit z archivu';
+                } else {
+                    archiveBadge.style.display = 'none';
+                    btnToggleArchive.innerHTML = '<i class="fa-solid fa-box-archive"></i> Přesunout do archivu';
+                }
+
+                quill.root.innerHTML = project.docContent || '';
+
+                renderTasks();
+                renderExplorer();
+            }
+
+            closeSidebar();
+        }
+
+        function saveProject() {
+            const editId = document.getElementById('project-edit-id').value;
+            const name = document.getElementById('project-name-input').value.trim();
+            const color = document.getElementById('project-color-input').value;
+
+            if (!name) return alert('Zadejte název projektu!');
+
+            const projects = isFirebaseActive ? firebaseProjects : localProjects;
+            const maxOrder = projects.length > 0 ? Math.max(...projects.map(p => p.order || 0)) + 1 : 0;
+
+            if (editId) {
+                if (isFirebaseActive) {
+                    db.collection('projects').doc(editId).update({ name: name, color: color }).then(() => closeModal('modal-project'));
+                } else {
+                    const p = localProjects.find(proj => proj.id === editId);
+                    if (p) { p.name = name; p.color = color; }
+                    closeModal('modal-project');
+                    renderProjects();
+                    if (currentProjectId === editId) selectProject(editId);
+                }
+            } else {
+                if (isFirebaseActive) {
+                    db.collection('projects').add({
+                        name: name,
+                        color: color,
+                        archived: false,
+                        order: maxOrder,
+                        docContent: '',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }).then(docRef => {
+                        closeModal('modal-project');
+                        selectProject(docRef.id);
+                    });
+                } else {
+                    const newP = { id: 'p_' + Date.now(), name: name, color: color, archived: false, order: maxOrder, docContent: '' };
+                    localProjects.push(newP);
+                    closeModal('modal-project');
+                    selectProject(newP.id);
+                }
+            }
+        }
+
+        function toggleArchiveCurrentProject() {
+            if (!currentProjectId) return;
+            const projects = isFirebaseActive ? firebaseProjects : localProjects;
+            const project = projects.find(p => p.id === currentProjectId);
+            if (!project) return;
+
+            const newArchivedState = !project.archived;
+
+            if (isFirebaseActive) {
+                db.collection('projects').doc(currentProjectId).update({ archived: newArchivedState });
+            } else {
+                project.archived = newArchivedState;
+                selectProject(currentProjectId);
+            }
+        }
+
+        function deleteCurrentProject() {
+            if (!currentProjectId) return;
+            if (confirm('Opravdu chcete smazat celý tento projekt včetně všech jeho úkolů, návodů a souborů?')) {
+                if (isFirebaseActive) {
+                    db.collection('projects').doc(currentProjectId).delete();
+                } else {
+                    localProjects = localProjects.filter(p => p.id !== currentProjectId);
+                    currentProjectId = null;
+                    if (localProjects.length > 0) {
+                        selectProject(localProjects[0].id);
+                    } else {
+                        document.getElementById('current-project-title').innerText = 'Žádný projekt';
+                        renderProjects();
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
+        // 5. SPRÁVA ÚKOLŮ + DRAG & DROP ŘAZENÍ
+        // =========================================================================
+        let draggedTaskId = null;
+
+        function handleTaskDragStart(e, id) {
+            draggedTaskId = id;
+            e.dataTransfer.effectAllowed = 'move';
+            setTimeout(() => e.target.classList.add('dragging'), 0);
+        }
+
+        function handleTaskDragEnd(e) {
+            e.target.classList.remove('dragging');
+            draggedTaskId = null;
+        }
+
+        function handleTaskDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        function handleTaskDrop(e, targetId) {
+            e.preventDefault();
+            if (!draggedTaskId || draggedTaskId === targetId) return;
+
+            let tasks = isFirebaseActive ? firebaseTasks : localTasks;
+            let projectTasks = tasks.filter(t => t.projectId === currentProjectId);
+            projectTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            const draggedIdx = projectTasks.findIndex(t => t.id === draggedTaskId);
+            const targetIdx = projectTasks.findIndex(t => t.id === targetId);
+
+            if (draggedIdx === -1 || targetIdx === -1) return;
+
+            const [movedItem] = projectTasks.splice(draggedIdx, 1);
+            projectTasks.splice(targetIdx, 0, movedItem);
+
+            projectTasks.forEach((t, index) => {
+                t.order = index;
+                if (isFirebaseActive) {
+                    db.collection('tasks').doc(t.id).update({ order: index });
+                }
+            });
+
+            renderTasks();
+        }
+
+        function renderTasks() {
+            const container = document.getElementById('tasks-container');
+            container.innerHTML = '';
+
+            const tasks = isFirebaseActive ? firebaseTasks : localTasks;
+            let projectTasks = tasks.filter(t => t.projectId === currentProjectId);
+            projectTasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            if (projectTasks.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary);">Žádné úkoly pro tento projekt.</p>';
+                return;
+            }
+
+            projectTasks.forEach(t => {
+                const card = document.createElement('div');
+                card.className = 'task-card';
+                card.setAttribute('draggable', 'true');
+                card.ondragstart = (e) => handleTaskDragStart(e, t.id);
+                card.ondragend = (e) => handleTaskDragEnd(e);
+                card.ondragover = (e) => handleTaskDragOver(e);
+                card.ondrop = (e) => handleTaskDrop(e, t.id);
+
+                const descriptionHtml = t.description && t.description.trim() !== '' 
+                    ? `<div class="task-description">${escapeHtml(t.description)}</div>` 
+                    : '';
+
+                card.innerHTML = `
+                    <div class="task-main-row">
+                        <div class="task-left">
+                            <input type="checkbox" class="task-checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTask('${t.id}', this.checked)">
+                            <span class="task-title ${t.completed ? 'completed' : ''}">${escapeHtml(t.title)}</span>
+                        </div>
+                        <div class="task-actions">
+                            <span class="badge badge-${t.priority}">${t.priority === 'p1' ? 'Vysoká' : t.priority === 'p2' ? 'Střední' : 'Nízká'}</span>
+                            <button class="btn-icon" title="Přesunout úkol" onclick="openMoveModal('${t.id}', 'task')">
+                                <i class="fa-solid fa-arrow-right-arrow-left"></i>
+                            </button>
+                            <button class="btn-icon" title="Upravit úkol" onclick="openTaskModal('${t.id}')">
+                                <i class="fa-solid fa-pen-to-square"></i>
+                            </button>
+                            <button class="btn-icon" style="color: var(--danger-color);" title="Smazat úkol" onclick="deleteTask('${t.id}')">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    ${descriptionHtml}
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function saveTask() {
+            const taskId = document.getElementById('task-edit-id').value;
+            const title = document.getElementById('task-title-input').value.trim();
+            const priority = document.getElementById('task-priority-input').value;
+            const description = document.getElementById('task-desc-input').value.trim();
+
+            if (!title) return alert('Zadejte název úkolu!');
+            if (!currentProjectId) return alert('Nejprve vyberte projekt!');
+
+            const tasks = isFirebaseActive ? firebaseTasks : localTasks;
+            const projectTasks = tasks.filter(t => t.projectId === currentProjectId);
+            const maxOrder = projectTasks.length > 0 ? Math.max(...projectTasks.map(t => t.order || 0)) + 1 : 0;
+
+            if (taskId) {
+                if (isFirebaseActive) {
+                    db.collection('tasks').doc(taskId).update({
+                        title: title, priority: priority, description: description
+                    }).then(() => closeModal('modal-task'));
+                } else {
+                    const task = localTasks.find(t => t.id === taskId);
+                    if (task) { task.title = title; task.priority = priority; task.description = description; }
+                    closeModal('modal-task');
+                    renderTasks();
+                }
+            } else {
+                if (isFirebaseActive) {
+                    db.collection('tasks').add({
+                        projectId: currentProjectId, title: title, priority: priority,
+                        description: description, completed: false,
+                        order: maxOrder,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }).then(() => closeModal('modal-task'));
+                } else {
+                    localTasks.push({
+                        id: 't_' + Date.now(), projectId: currentProjectId,
+                        title: title, priority: priority, description: description, completed: false,
+                        order: maxOrder
+                    });
+                    closeModal('modal-task');
+                    renderTasks();
+                }
+            }
+        }
+
+        function toggleTask(id, completed) {
+            if (isFirebaseActive) {
+                db.collection('tasks').doc(id).update({ completed: completed });
+            } else {
+                const task = localTasks.find(t => t.id === id);
+                if (task) task.completed = completed;
+                renderTasks();
+            }
+        }
+
+        function deleteTask(id) {
+            if (confirm('Opravdu chcete tento úkol smazat?')) {
+                if (isFirebaseActive) {
+                    db.collection('tasks').doc(id).delete();
+                } else {
+                    localTasks = localTasks.filter(t => t.id !== id);
+                    renderTasks();
+                }
+            }
+        }
+
+        // =========================================================================
+        // 6. ULOŽENÍ DOKUMENTACE
+        // =========================================================================
+        function saveDocumentation() {
+            if (!currentProjectId) return alert('Vyberte projekt!');
+            const htmlContent = quill.root.innerHTML;
+
+            if (isFirebaseActive) {
+                db.collection('projects').doc(currentProjectId).update({ docContent: htmlContent })
+                    .then(() => alert('Dokumentace a materiál byly úspěšně uloženy!'));
+            } else {
+                const project = localProjects.find(p => p.id === currentProjectId);
+                if (project) project.docContent = htmlContent;
+                alert('Dokumentace byla uložena lokálně!');
+            }
+        }
+
+        // =========================================================================
+        // 7. SPRÁVA SLOŽEK A SOUBORŮ (GITHUB API)
+        // =========================================================================
+        function createFolder() {
+            const name = document.getElementById('folder-name-input').value.trim();
+            if (!name) return alert('Zadejte název složky!');
+            if (!currentProjectId) return alert('Vyberte projekt!');
+
+            if (isFirebaseActive) {
+                db.collection('folders').add({
+                    projectId: currentProjectId,
+                    parentId: currentFolderId,
+                    name: name,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                }).then(() => closeModal('modal-folder'));
+            } else {
+                localFolders.push({
+                    id: 'fld_' + Date.now(),
+                    projectId: currentProjectId,
+                    parentId: currentFolderId,
+                    name: name
+                });
+                closeModal('modal-folder');
+                renderExplorer();
+            }
+        }
+
+        function deleteFolder(folderId, event) {
+            if (event) event.stopPropagation();
+
+            if (confirm('Opravdu chcete smazat tuto složku?')) {
+                if (isFirebaseActive) {
+                    db.collection('folders').doc(folderId).delete();
+                } else {
+                    localFolders = localFolders.filter(f => f.id !== folderId);
+                    localFiles.forEach(file => {
+                        if (file.folderId === folderId) file.folderId = 'root';
+                    });
+                    localStorage.setItem('cache_local_files', JSON.stringify(localFiles));
+                    renderExplorer();
+                }
+            }
+        }
+
+        function renderExplorer() {
+            renderBreadcrumbs();
+            renderFolderGrid();
+            renderFiles();
+        }
+
+        function getFolderPath(folderId) {
+            const path = [];
+            const folders = isFirebaseActive ? firebaseFolders : localFolders;
+            let curr = folderId;
+
+            while (curr && curr !== 'root') {
+                const f = folders.find(item => item.id === curr);
+                if (f) {
+                    path.unshift(f);
+                    curr = f.parentId;
+                } else {
+                    break;
+                }
+            }
+            return path;
+        }
+
+        function renderBreadcrumbs() {
+            const container = document.getElementById('folder-breadcrumbs');
+            container.innerHTML = '';
+
+            const rootItem = document.createElement('span');
+            rootItem.className = `breadcrumb-item ${currentFolderId === 'root' ? 'breadcrumb-active' : ''}`;
+            rootItem.innerHTML = `<i class="fa-solid fa-house"></i> Kořenová složka`;
+            rootItem.onclick = () => { currentFolderId = 'root'; renderExplorer(); };
+            container.appendChild(rootItem);
+
+            const path = getFolderPath(currentFolderId);
+
+            path.forEach((f, idx) => {
+                const sep = document.createElement('span');
+                sep.className = 'breadcrumb-separator';
+                sep.innerText = '/';
+                container.appendChild(sep);
+
+                const item = document.createElement('span');
+                const isLast = idx === path.length - 1;
+                item.className = `breadcrumb-item ${isLast ? 'breadcrumb-active' : ''}`;
+                item.innerText = f.name;
+                if (!isLast) {
+                    item.onclick = () => { currentFolderId = f.id; renderExplorer(); };
+                }
+                container.appendChild(item);
+            });
+        }
+
+        function renderFolderGrid() {
+            const grid = document.getElementById('folder-grid');
+            grid.innerHTML = '';
+
+            const folders = isFirebaseActive ? firebaseFolders : localFolders;
+            const currentSubfolders = folders.filter(f => f.projectId === currentProjectId && f.parentId === currentFolderId);
+
+            if (currentSubfolders.length === 0) {
+                grid.style.display = 'none';
+                return;
+            }
+
+            grid.style.display = 'grid';
+
+            currentSubfolders.forEach(f => {
+                const card = document.createElement('div');
+                card.className = 'folder-card';
+                card.onclick = () => { currentFolderId = f.id; renderExplorer(); };
+                card.innerHTML = `
+                    <div class="folder-info">
+                        <i class="fa-solid fa-folder"></i>
+                        <span>${escapeHtml(f.name)}</span>
+                    </div>
+                    <button class="btn-icon" style="color: var(--danger-color);" title="Smazat složku" onclick="deleteFolder('${f.id}', event)">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // Pomocná funkce pro očištění názvu souboru pro GitHub cestu
+        function sanitizeFilename(name) {
+            return name
+                .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // odstraní diakritiku
+                .replace(/\s+/g, "_") // nahradí mezery podtržítkem
+                .replace(/[^a-zA-Z0-9._-]/g, ""); // odstraní speciální znaky
+        }
+
+        // Nahrávání souborů (fotky se automaticky zmenšují, větší soubory vyžadují lokální odeslání z PC přes Git)
+        function uploadFile(event) {
+            const file = event.target.files[0];
+            if (!file || !currentProjectId) return;
+
+            const userChoiceName = prompt('Zadejte název souboru / modelu:', file.name);
+            if (userChoiceName === null) {
+                event.target.value = '';
+                return;
+            }
+
+            const finalFileName = userChoiceName.trim() !== '' ? userChoiceName.trim() : file.name;
+            const ext = finalFileName.split('.').pop().toLowerCase();
+            const isImage = ['jpg', 'jpeg', 'png', 'webp'].includes(ext);
+
+            if (isImage) {
+                // Automatické zmenšení obrázku bez ptaní
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        const MAX_DIMENSION = 1600;
+
+                        if (width > height) {
+                            if (width > MAX_DIMENSION) { height *= MAX_DIMENSION / width; width = MAX_DIMENSION; }
+                        } else {
+                            if (height > MAX_DIMENSION) { width *= MAX_DIMENSION / height; height = MAX_DIMENSION; }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        let quality = 0.85;
+                        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+                        let base64Content = dataUrl.split(',')[1];
+                        let sizeBytes = atob(base64Content).length;
+
+                        // Snižujeme kvalitu, dokud není pod 1 MB
+                        while (sizeBytes > 1024 * 1024 && quality > 0.2) {
+                            quality -= 0.15;
+                            dataUrl = canvas.toDataURL('image/jpeg', quality);
+                            base64Content = dataUrl.split(',')[1];
+                            sizeBytes = atob(base64Content).length;
+                        }
+
+                        if (sizeBytes > 1024 * 1024) {
+                            alert('⚠️ Fotku se nepodařilo zmenšit pod 1 MB. Nelze odeslat, musíte ji nahrát lokálně z PC přímo do repozitáře přes Git.');
+                            event.target.value = '';
+                            return;
+                        }
+
+                        const fileSizeKB = (sizeBytes / 1024).toFixed(1) + ' KB';
+                        sendToGitHub(base64Content, finalFileName, fileSizeKB, event);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                // Pro ne-obrázkové soubory zkontrolujeme limit 1 MB
+                if (file.size > 1024 * 1024) {
+                    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+                    alert(`⚠️ Tento soubor má ${sizeMB} MB. GitHub API umožňuje přes web nahrávat pouze soubory do 1 MB.\n\nVětší soubory musíte odeslat lokálně z PC přímo do repozitáře přes Git!`);
+                    event.target.value = '';
+                    return;
+                }
+
+                if (!GITHUB_CONFIG.token || GITHUB_CONFIG.token.trim() === "") {
+                    alert('⚠️ Pro nahrávání na GitHub musíte v kódu nastavit GitHub Personal Access Token (GITHUB_CONFIG.token)!');
+                    event.target.value = '';
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const base64Content = e.target.result.split(',')[1];
+                    const fileSizeKB = (file.size / 1024).toFixed(1) + ' KB';
+                    sendToGitHub(base64Content, finalFileName, fileSizeKB, event);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // Pomocná funkce pro odeslání na GitHub API
+        function sendToGitHub(base64Content, finalFileName, fileSize, event) {
+            const safeFileName = sanitizeFilename(finalFileName);
+            const filePath = `uploads/project_${currentProjectId}/${Date.now()}_${safeFileName}`;
+            const url = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
+
+            fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `token ${GITHUB_CONFIG.token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: `Upload ${finalFileName} via Blbovnik`,
+                    content: base64Content,
+                    branch: GITHUB_CONFIG.branch
+                })
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Chyba při komunikaci s GitHub API (HTTP ' + response.status + ')');
+                return response.json();
+            })
+            .then(data => {
+                const downloadUrl = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${filePath}`;
+
+                if (isFirebaseActive) {
+                    db.collection('files').add({
+                        projectId: currentProjectId,
+                        folderId: currentFolderId,
+                        name: finalFileName,
+                        size: fileSize,
+                        content: downloadUrl,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }).then(() => {
+                        alert('Soubor "' + finalFileName + '" byl úspěšně nahrán na GitHub!');
+                    });
+                } else {
+                    localFiles.push({
+                        id: 'f_' + Date.now(),
+                        projectId: currentProjectId,
+                        folderId: currentFolderId,
+                        name: finalFileName,
+                        size: fileSize,
+                        content: downloadUrl
+                    });
+                    localStorage.setItem('cache_local_files', JSON.stringify(localFiles));
+                    renderExplorer();
+                    alert('Soubor "' + finalFileName + '" byl úspěšně nahrán na GitHub!');
+                }
+            })
+            .catch(err => {
+                console.error("GitHub upload error:", err);
+                alert('Chyba při nahrávání na GitHub: ' + err.message);
+            });
+
+            if (event && event.target) {
+                event.target.value = '';
+            }
+        }
+
+        function openRenameFileModal(fileId) {
+            const cloudFiles = isFirebaseActive ? firebaseFiles : [];
+            const allFiles = [...cloudFiles, ...localFiles];
+            const file = allFiles.find(f => f.id === fileId);
+            if (!file) return;
+
+            document.getElementById('rename-file-id').value = fileId;
+            document.getElementById('rename-file-input').value = file.name;
+            document.getElementById('modal-rename-file').style.display = 'flex';
+        }
+
+        function confirmRenameFile() {
+            const fileId = document.getElementById('rename-file-id').value;
+            const newName = document.getElementById('rename-file-input').value.trim();
+
+            if (!newName) return alert('Zadejte nový název souboru!');
+
+            const localFile = localFiles.find(f => f.id === fileId);
+            if (localFile) {
+                localFile.name = newName;
+                localStorage.setItem('cache_local_files', JSON.stringify(localFiles));
+                closeModal('modal-rename-file');
+                renderExplorer();
+            } else if (isFirebaseActive) {
+                db.collection('files').doc(fileId).update({ name: newName })
+                    .then(() => closeModal('modal-rename-file'));
+            }
+        }
+
+        function renderFiles() {
+            const list = document.getElementById('file-list');
+            list.innerHTML = '';
+
+            const cloudFiles = isFirebaseActive ? firebaseFiles : [];
+            const allFiles = [...cloudFiles, ...localFiles];
+
+            const projectFiles = allFiles.filter(f => f.projectId === currentProjectId && (f.folderId || 'root') === currentFolderId);
+
+            const folders = isFirebaseActive ? firebaseFolders : localFolders;
+            const currentSubfolders = folders.filter(f => f.projectId === currentProjectId && f.parentId === currentFolderId);
+
+            if (projectFiles.length === 0 && currentSubfolders.length === 0) {
+                list.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 20px;">Tato složka je prázdná.</p>';
+                return;
+            }
+
+            if (projectFiles.length === 0) {
+                list.innerHTML = '<p style="color: var(--text-secondary);">Žádné přímé soubory v této složce.</p>';
+                return;
+            }
+
+            projectFiles.forEach(f => {
+                const ext = f.name.split('.').pop().toLowerCase();
+                let iconClass = 'fa-file';
+                let iconColor = 'var(--accent-color)';
+
+                if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+                    iconClass = 'fa-file-image';
+                    iconColor = '#38bdf8';
+                } else if (ext === 'pdf') {
+                    iconClass = 'fa-file-pdf';
+                    iconColor = '#f87171';
+                } else if (['doc', 'docx'].includes(ext)) {
+                    iconClass = 'fa-file-word';
+                    iconColor = '#60a5fa';
+                } else if (['xls', 'xlsx'].includes(ext)) {
+                    iconClass = 'fa-file-excel';
+                    iconColor = '#4ade80';
+                } else if (['ppt', 'pptx'].includes(ext)) {
+                    iconClass = 'fa-file-powerpoint';
+                    iconColor = '#fb923c';
+                } else if (['stl', 'gcode', 'obj', '3mf'].includes(ext)) {
+                    iconClass = 'fa-cube';
+                    iconColor = '#f59e0b';
+                } else if (['ino', 'cpp', 'h', 'c', 'py', 'js', 'json', 'html', 'css', 'txt'].includes(ext)) {
+                    iconClass = 'fa-file-code';
+                    iconColor = '#38bdf8';
+                }
+
+                const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+                const isPdf = ext === 'pdf';
+                const isDoc = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext);
+
+                let previewHtml = '';
+                if (isImage) {
+                    previewHtml = `<div class="image-preview-container" id="preview-${f.id}"><img alt="${escapeHtml(f.name)}"></div>`;
+                } else if (isPdf) {
+                    previewHtml = `<div class="pdf-preview-container" id="preview-${f.id}"><iframe></iframe></div>`;
+                } else if (isDoc) {
+                    previewHtml = `
+                        <div class="doc-preview-container" id="preview-${f.id}">
+                            <i class="fa-solid ${iconClass} fa-3x" style="color: ${iconColor}; margin-bottom: 10px;"></i>
+                            <p>Pro zobrazení dokumentu <b>${escapeHtml(f.name)}</b> klikněte na tlačítko <b>Stáhnout</b>.</p>
+                        </div>`;
+                } else {
+                    previewHtml = `<pre class="code-preview" id="preview-${f.id}">${escapeHtml(getFileTextPreview(f.content))}</pre>`;
+                }
+                const li = document.createElement('li');
+                li.className = 'file-item';
+                li.innerHTML = `
+                    <div class="file-header-bar">
+                        <div class="file-info">
+                            <i class="fa-solid ${iconClass} fa-lg" style="color: ${iconColor};"></i>
+                            <div>
+                                <strong>${escapeHtml(f.name)}</strong>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">${f.size || 'Neznámá vel.'}</div>
+                            </div>
+                        </div>
+                        <div class="file-actions">
+                            <button class="btn" style="background: #334155; color: white; padding: 6px 12px; font-size: 0.8rem;" onclick="toggleCodePreview('${f.id}')">
+                                <i class="fa-solid fa-eye"></i> Náhled
+                            </button>
+                            <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem;" title="Přejmenovat" onclick="openRenameFileModal('${f.id}')">
+                                <i class="fa-solid fa-pen"></i> Přejmenovat
+                            </button>
+                            <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem;" title="Přesunout" onclick="openMoveModal('${f.id}', 'file')">
+                                <i class="fa-solid fa-arrow-right-arrow-left"></i> Přesunout
+                            </button>
+                            <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="downloadCodeFile('${f.id}')">
+                                <i class="fa-solid fa-download"></i> Stáhnout
+                            </button>
+                            <button class="btn btn-danger" style="padding: 6px 12px; font-size: 0.8rem;" onclick="deleteFile('${f.id}')">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    ${previewHtml}
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        function getFileTextPreview(dataUrl) {
+            if (!dataUrl) return 'Žádný obsah';
+            if (dataUrl.startsWith('https://')) {
+                return '[Odkaz na uložený soubor - klikněte na Stáhnout pro otevření]';
+            }
+            if (dataUrl.startsWith('data:')) {
+                try {
+                    const commaIdx = dataUrl.indexOf(',');
+                    if (commaIdx !== -1) {
+                        const mime = dataUrl.substring(5, commaIdx);
+                        const base64 = dataUrl.substring(commaIdx + 1);
+                        if (mime.includes('text') || mime.includes('json') || mime.includes('javascript') || mime.includes('xml') || mime.includes('x-arduino') || mime.includes('gcode')) {
+                            return atob(base64);
+                        } else {
+                            return '[Binární / 3D soubor - stáhněte soubor pro otevření]';
+                        }
+                    }
+                } catch(e) {
+                    return 'Chyba při dekódování náhledu';
+                }
+            }
+            return dataUrl;
+        }
+
+        function toggleCodePreview(fileId) {
+            const elem = document.getElementById(`preview-${fileId}`);
+            if (!elem) return;
+
+            const isVisible = elem.style.display === 'block';
+            elem.style.display = isVisible ? 'none' : 'block';
+
+            if (!isVisible) {
+                const cloudFiles = isFirebaseActive ? firebaseFiles : [];
+                const allFiles = [...cloudFiles, ...localFiles];
+                const file = allFiles.find(f => f.id === fileId);
+                
+                if (file && file.content && file.content.startsWith('https://raw.githubusercontent.com/')) {
+                    const imgEl = elem.querySelector('img');
+                    const iframeEl = elem.querySelector('iframe');
+                    
+                    if ((imgEl && !imgEl.src) || (iframeEl && !iframeEl.src)) {
+                        const parts = file.content.split(`/${GITHUB_CONFIG.branch}/`);
+                        if (parts.length >= 2) {
+                            const filePath = parts[1];
+                            const apiUrl = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
+
+                            fetch(apiUrl, {
+                                headers: {
+                                    'Authorization': `token ${GITHUB_CONFIG.token}`,
+                                    'Accept': 'application/vnd.github.v3+json'
+                                }
+                            })
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data.content) {
+                                    const binaryString = atob(data.content.replace(/\s/g, ''));
+                                    const len = binaryString.length;
+                                    const bytes = new Uint8Array(len);
+                                    for (let i = 0; i < len; i++) {
+                                        bytes[i] = binaryString.charCodeAt(i);
+                                    }
+                                    const ext = file.name.split('.').pop().toLowerCase();
+                                    let mime = 'application/octet-stream';
+                                    if (['jpg', 'jpeg'].includes(ext)) mime = 'image/jpeg';
+                                    else if (ext === 'png') mime = 'image/png';
+                                    else if (ext === 'gif') mime = 'image/gif';
+                                    else if (ext === 'webp') mime = 'image/webp';
+                                    else if (ext === 'pdf') mime = 'application/pdf';
+
+                                    const blob = new Blob([bytes], { type: mime });
+                                    const blobUrl = window.URL.createObjectURL(blob);
+
+                                    if (imgEl) imgEl.src = blobUrl;
+                                    if (iframeEl) iframeEl.src = blobUrl;
+                                }
+                            })
+                            .catch(err => console.error("Preview load error:", err));
+                        }
+                    }
+                }
+            }
+        }
+
+        function downloadCodeFile(fileId) {
+            const cloudFiles = isFirebaseActive ? firebaseFiles : [];
+            const allFiles = [...cloudFiles, ...localFiles];
+            const file = allFiles.find(f => f.id === fileId);
+            if (!file || !file.content) return alert('Soubor nemá žádný obsah ke stažení.');
+
+            if (file.content.startsWith('https://raw.githubusercontent.com/')) {
+                const parts = file.content.split(`/${GITHUB_CONFIG.branch}/`);
+                if (parts.length < 2) {
+                    alert('Neplatná cesta k souboru na GitHubu.');
+                    return;
+                }
+                const filePath = parts[1];
+                const apiUrl = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
+
+                alert('Stahuji soubor z GitHubu...');
+
+                fetch(apiUrl, {
+                    headers: {
+                        'Authorization': `token ${GITHUB_CONFIG.token}`,
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Nelze načíst soubor z GitHubu (chyba ' + response.status + ')');
+                    return response.json();
+                })
+                .then(data => {
+                    if (!data.content) throw new Error('Obsah souboru nebyl nalezen.');
+
+                    const binaryString = atob(data.content.replace(/\s/g, ''));
+                    const len = binaryString.length;
+                    const bytes = new Uint8Array(len);
+                    for (let i = 0; i < len; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    const blob = new Blob([bytes]);
+
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = blobUrl;
+                    a.download = file.name;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(blobUrl);
+                })
+                .catch(err => {
+                    console.error("Download error:", err);
+                    alert('Chyba při stahování souboru: ' + err.message);
+                });
+            } else {
+                const a = document.createElement('a');
+                a.href = file.content;
+                a.target = '_blank';
+                a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        }
+
+        function deleteFile(fileId) {
+            if (!confirm('Opravdu chcete tento soubor smazat?')) return;
+
+            const cloudFiles = isFirebaseActive ? firebaseFiles : [];
+            const allFiles = [...cloudFiles, ...localFiles];
+            const file = allFiles.find(f => f.id === fileId);
+
+            // 1. Smazání z databáze nebo lokálního pole
+            const localIdx = localFiles.findIndex(f => f.id === fileId);
+            if (localIdx !== -1) {
+                localFiles.splice(localIdx, 1);
+                localStorage.setItem('cache_local_files', JSON.stringify(localFiles));
+                renderFiles();
+            } else if (isFirebaseActive) {
+                db.collection('files').doc(fileId).delete().catch(err => {
+                    console.error("Firebase delete error:", err);
+                });
+            }
+
+            // 2. Smazání fyzického souboru z GitHubu (pokud tam byl)
+            if (file && file.content && file.content.startsWith('https://raw.githubusercontent.com/')) {
+                const parts = file.content.split(`/${GITHUB_CONFIG.branch}/`);
+                if (parts.length >= 2) {
+                    const filePath = parts[1];
+                    const apiUrl = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
+
+                    fetch(apiUrl, {
+                        headers: {
+                            'Authorization': `token ${GITHUB_CONFIG.token}`,
+                            'Accept': 'application/vnd.github.v3+json'
+                        }
+                    })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Nelze najít soubor na GitHubu.');
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (!data.sha) throw new Error('Chybí SHA souboru.');
+                        return fetch(apiUrl, {
+                            method: 'DELETE',
+                            headers: {
+                                'Authorization': `token ${GITHUB_CONFIG.token}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                message: `Delete ${file.name} via Blbovnik`,
+                                sha: data.sha,
+                                branch: GITHUB_CONFIG.branch
+                            })
+                        });
+                    }).catch(err => console.warn("GitHub delete warning:", err));
+                }
+            }
+        }
+
+        // =========================================================================
+        // 8. PŘESOUVÁNÍ POLOŽEK
+        // =========================================================================
+        function openMoveModal(itemId, itemType) {
+            const modal = document.getElementById('modal-move');
+            const itemInput = document.getElementById('move-item-id');
+            const typeInput = document.getElementById('move-item-type');
+            const projectSelect = document.getElementById('move-target-project-select');
+            const folderGroup = document.getElementById('move-folder-select-group');
+
+            itemInput.value = itemId;
+            typeInput.value = itemType;
+
+            projectSelect.innerHTML = '';
+            const projects = isFirebaseActive ? firebaseProjects : localProjects;
+
+            projects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = (p.archived ? '[Archiv] ' : '') + p.name;
+                if (p.id === currentProjectId) opt.selected = true;
+                projectSelect.appendChild(opt);
+            });
+
+            if (itemType === 'file') {
+                folderGroup.style.display = 'block';
+                updateMoveFolderOptions();
+            } else {
+                folderGroup.style.display = 'none';
+            }
+
+            modal.style.display = 'flex';
+        }
+
+        function updateMoveFolderOptions() {
+            const targetProjId = document.getElementById('move-target-project-select').value;
+            const folderSelect = document.getElementById('move-target-folder-select');
+            folderSelect.innerHTML = '';
+
+            const optRoot = document.createElement('option');
+            optRoot.value = 'root';
+            optRoot.textContent = '📁 Kořenová složka projektu';
+            folderSelect.appendChild(optRoot);
+
+            const folders = isFirebaseActive ? firebaseFolders : localFolders;
+            const targetFolders = folders.filter(f => f.projectId === targetProjId);
+
+            targetFolders.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.id;
+                opt.textContent = '📁 ' + f.name;
+                folderSelect.appendChild(opt);
+            });
+        }
+
+        function confirmMoveItem() {
+            const itemId = document.getElementById('move-item-id').value;
+            const itemType = document.getElementById('move-item-type').value;
+            const targetProjectId = document.getElementById('move-target-project-select').value;
+
+            if (!targetProjectId) return;
+
+            if (itemType === 'task') {
+                if (isFirebaseActive) {
+                    db.collection('tasks').doc(itemId).update({ projectId: targetProjectId })
+                        .then(() => closeModal('modal-move'));
+                } else {
+                    const task = localTasks.find(t => t.id === itemId);
+                    if (task) task.projectId = targetProjectId;
+                    closeModal('modal-move');
+                    renderTasks();
+                }
+            } else if (itemType === 'file') {
+                const targetFolderId = document.getElementById('move-target-folder-select').value || 'root';
+
+                const localFile = localFiles.find(f => f.id === itemId);
+                if (localFile) {
+                    localFile.projectId = targetProjectId;
+                    localFile.folderId = targetFolderId;
+                    localStorage.setItem('cache_local_files', JSON.stringify(localFiles));
+                    closeModal('modal-move');
+                    renderExplorer();
+                } else if (isFirebaseActive) {
+                    db.collection('files').doc(itemId).update({
+                        projectId: targetProjectId,
+                        folderId: targetFolderId
+                    }).then(() => closeModal('modal-move'));
+                }
+            }
+        }
+
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // =========================================================================
+        // 9. FIREBASE REALTIME SYNCHRONIZACE
+        // =========================================================================
+        if (isFirebaseActive) {
+            if (firebaseProjects.length > 0) {
+                renderProjects();
+                if (!currentProjectId) {
+                    const activeProjs = firebaseProjects.filter(p => !p.archived);
+                    selectProject(activeProjs.length > 0 ? activeProjs[0].id : firebaseProjects[0].id);
+                }
+            }
+
+            db.collection('projects').onSnapshot(snapshot => {
+                firebaseProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                localStorage.setItem('cache_projects', JSON.stringify(firebaseProjects));
+                renderProjects();
+                
+                if (!currentProjectId && firebaseProjects.length > 0) {
+                    const activeProjs = firebaseProjects.filter(p => !p.archived);
+                    selectProject(activeProjs.length > 0 ? activeProjs[0].id : firebaseProjects[0].id);
+                } else if (currentProjectId) {
+                    const exists = firebaseProjects.some(p => p.id === currentProjectId);
+                    if (exists) {
+                        selectProject(currentProjectId);
+                    } else if (firebaseProjects.length > 0) {
+                        selectProject(firebaseProjects[0].id);
+                    }
+                }
+            }, err => console.error("Projects snapshot error:", err));
+
+            db.collection('tasks').onSnapshot(snapshot => {
+                firebaseTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                localStorage.setItem('cache_tasks', JSON.stringify(firebaseTasks));
+                renderTasks();
+            }, err => console.error("Tasks snapshot error:", err));
+
+            db.collection('folders').onSnapshot(snapshot => {
+                firebaseFolders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                localStorage.setItem('cache_folders', JSON.stringify(firebaseFolders));
+                renderExplorer();
+            }, err => console.error("Folders snapshot error:", err));
+
+            db.collection('files').onSnapshot(snapshot => {
+                firebaseFiles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderExplorer();
+            }, err => console.error("Files snapshot error:", err));
+        } else {
+            renderProjects();
+            selectProject('p1');
+        }
+    </script>
+</body>
+</html>
