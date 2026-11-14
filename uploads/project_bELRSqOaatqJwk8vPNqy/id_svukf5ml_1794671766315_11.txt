@@ -1,4 +1,0 @@
-Kdyby někdy potřeboval znovu zadat tokeny, zmáčknou na stránce blbovniku F12, console a do příkazového řádku napsat:
-localStorage.removeItem('blbovnik_github_token');
-
- 
