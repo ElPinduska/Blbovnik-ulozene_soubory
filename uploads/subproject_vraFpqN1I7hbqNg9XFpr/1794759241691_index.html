@@ -1,0 +1,1747 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blbovník</title>
+    
+    <!-- Google Fonts & Font Awesome Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Quill.js Editor CSS -->
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css">
+
+    <!-- Firebase Compatibility SDKs (App & Firestore) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <!-- Highlight.js pro zvýraznění kódu v Quill editoru -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <!-- Quill.js Editor JS -->
+    <script src="https://cdn.quilljs.com/1.3.6/quill.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --sidebar-bg: #1e293b;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-color: #38bdf8;
+            --accent-hover: #0284c7;
+            --danger-color: #ef4444;
+            --success-color: #22c55e;
+            --warning-color: #f59e0b;
+            --archive-color: #a855f7;
+            --folder-color: #eab308;
+            --photo-color: #ec4899;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(2px);
+            z-index: 98;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            width: 290px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--card-border);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            flex-shrink: 0;
+            transition: transform 0.3s ease;
+            z-index: 99;
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--accent-color);
+            margin-bottom: 25px;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn-close-sidebar {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.3rem;
+            cursor: pointer;
+        }
+
+        .project-section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn-add-project {
+            background: none;
+            border: none;
+            color: var(--accent-color);
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        .project-list {
+            list-style: none;
+            overflow-y: auto;
+            max-height: 40vh;
+        }
+
+        .project-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            cursor: grab;
+            color: var(--text-secondary);
+            transition: background-color 0.2s, color 0.2s;
+        }
+
+        .project-item:active { cursor: grabbing; }
+        .project-item.dragging { opacity: 0.4; }
+        .project-item:hover, .project-item.active { background-color: #334155; color: var(--text-primary); }
+        .project-item.active { border-left: 4px solid var(--accent-color); }
+        .project-item.archived { opacity: 0.75; font-style: italic; }
+
+        .project-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .project-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow-y: auto;
+            background-color: var(--bg-color);
+        }
+
+        .top-nav {
+            background-color: var(--sidebar-bg);
+            border-bottom: 1px solid var(--card-border);
+            padding: 16px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .mobile-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        .project-title-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .project-title { font-size: 1.5rem; font-weight: 700; }
+
+        .archived-tag {
+            background-color: rgba(168, 85, 247, 0.2);
+            color: #c084fc;
+            border: 1px solid var(--archive-color);
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .content-body {
+            padding: 30px;
+            max-width: 1100px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .breadcrumb-nav {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            flex-wrap: wrap;
+        }
+
+        .breadcrumb-nav span { color: var(--accent-color); cursor: pointer; }
+        .breadcrumb-nav span:hover { text-decoration: underline; }
+
+        .project-section {
+            background-color: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 30px;
+        }
+
+        .project-section h2 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 1px solid var(--card-border);
+            padding-bottom: 10px;
+        }
+
+        /* Upozornění na blížící se termíny */
+        .deadline-alert-box {
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+        .deadline-alert-title {
+            font-size: 1rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent-color);
+        }
+        .deadline-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .deadline-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            margin-bottom: 8px;
+        }
+        .deadline-item.yellow { border-left: 4px solid var(--warning-color); background: rgba(245, 158, 11, 0.08); }
+        .deadline-item.orange { border-left: 4px solid #f97316; background: rgba(249, 115, 22, 0.12); }
+        .deadline-item.red { border-left: 4px solid var(--danger-color); background: rgba(239, 68, 68, 0.12); }
+
+        .deadline-path-link {
+            color: var(--accent-color);
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .deadline-path-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Tlačítka */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .btn-primary { background-color: var(--accent-color); color: #0f172a; }
+        .btn-primary:hover { background-color: var(--accent-hover); }
+        .btn-secondary { background-color: #334155; color: white; }
+        .btn-secondary:hover { background-color: #475569; }
+        .btn-archive { background-color: rgba(168, 85, 247, 0.2); color: #c084fc; border: 1px solid var(--archive-color); }
+        .btn-danger { background-color: var(--danger-color); color: white; }
+
+        .btn-icon {
+            background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1rem; padding: 6px; border-radius: 6px;
+        }
+        .btn-icon:hover { background-color: rgba(255, 255, 255, 0.1); color: var(--text-primary); }
+
+        .project-actions-bar {
+            display: flex; gap: 10px; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid var(--card-border); flex-wrap: wrap;
+        }
+
+        .subproject-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 15px;
+        }
+
+        .subproject-card {
+            background-color: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 16px;
+            cursor: grab;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 110px;
+            transition: border-color 0.2s;
+        }
+
+        .subproject-card:active { cursor: grabbing; }
+        .subproject-card.dragging { opacity: 0.4; }
+        .subproject-card:hover { border-color: var(--accent-color); }
+
+        .task-card {
+            background-color: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            cursor: grab;
+        }
+        .task-card:active { cursor: grabbing; }
+        .task-card.dragging { opacity: 0.4; }
+
+        .task-main-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+        }
+
+        .task-left { display: flex; align-items: center; gap: 14px; flex-grow: 1; }
+        .task-title { font-weight: 600; font-size: 1.05rem; }
+        .task-title.completed { text-decoration: line-through; color: var(--text-secondary); }
+
+        .task-description {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            padding-left: 34px;
+            white-space: pre-wrap;
+            line-height: 1.4;
+            border-top: 1px dashed rgba(255, 255, 255, 0.05);
+            padding-top: 8px;
+            margin-top: 2px;
+        }
+
+        .badge { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+        .badge-p1 { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .badge-p2 { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+        .badge-p3 { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+
+        .badge-date { background: rgba(148, 163, 184, 0.15); color: var(--text-secondary); display: inline-flex; align-items: center; gap: 5px; }
+        .badge-date.yellow { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+        .badge-date.orange { background: rgba(249, 115, 22, 0.2); color: #fdba74; }
+        .badge-date.red { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .photo-card {
+            background-color: #0f172a;
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .photo-card img { width: 100%; height: 140px; object-fit: cover; cursor: pointer; }
+        .photo-footer { padding: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; }
+        .photo-info-row { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        .size-tag { font-size: 0.75rem; color: var(--accent-color); background: rgba(56, 189, 248, 0.1); padding: 2px 6px; border-radius: 4px; }
+
+        .editor-container-wrapper {
+            background-color: #0f172a; border-radius: 10px; border: 1px solid var(--card-border); overflow: hidden;
+        }
+        .ql-toolbar.ql-snow { background-color: #334155 !important; border: none !important; border-bottom: 1px solid var(--card-border) !important; }
+        .ql-snow .ql-stroke { stroke: var(--text-primary) !important; }
+        .ql-snow .ql-fill { fill: var(--text-primary) !important; }
+        .ql-snow .ql-picker { color: var(--text-primary) !important; }
+        #editor { min-height: 300px; color: var(--text-primary); font-size: 1rem; border: none !important; }
+
+        .folder-breadcrumbs {
+            display: flex; align-items: center; gap: 8px; background-color: #0f172a; border: 1px solid var(--card-border); padding: 10px 16px; border-radius: 8px; margin-bottom: 15px; font-size: 0.95rem; flex-wrap: wrap;
+        }
+        .breadcrumb-item { color: var(--accent-color); cursor: pointer; display: flex; align-items: center; gap: 6px; font-weight: 500; }
+        .breadcrumb-item:hover { text-decoration: underline; }
+        .breadcrumb-active { color: var(--text-primary); font-weight: 600; }
+
+        .folder-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;
+        }
+        .folder-card {
+            background-color: #0f172a; border: 1px solid var(--card-border); border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;
+        }
+        .folder-card:hover { border-color: var(--folder-color); }
+        .folder-info { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--folder-color); }
+
+        .upload-area {
+            border: 2px dashed var(--card-border); border-radius: 10px; padding: 20px; text-align: center; background-color: #0f172a; margin-bottom: 20px; cursor: pointer;
+        }
+        .upload-area:hover { border-color: var(--accent-color); }
+
+        .file-item {
+            background-color: #0f172a; border: 1px solid var(--card-border); padding: 14px 18px; border-radius: 8px; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+        }
+
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); align-items: center; justify-content: center; z-index: 100;
+        }
+        .modal-content {
+            background-color: var(--sidebar-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 24px; width: 90%; max-width: 500px;
+        }
+        .modal-header { font-size: 1.2rem; font-weight: 700; margin-bottom: 16px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-size: 0.85rem; color: var(--text-secondary); }
+        .form-control { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--card-border); background-color: var(--bg-color); color: var(--text-primary); font-size: 0.95rem; }
+        textarea.form-control { resize: vertical; min-height: 90px; }
+
+        .config-warning {
+            background-color: rgba(245, 158, 11, 0.15); border: 1px solid var(--warning-color); color: #fbbf24; padding: 12px 18px; border-radius: 8px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar { position: fixed; left: -290px; top: 0; bottom: 0; width: 290px; box-shadow: 4px 0 15px rgba(0,0,0,0.5); }
+            .sidebar.open { transform: translateX(290px); }
+            .mobile-toggle { display: block; }
+            .btn-close-sidebar { display: block; }
+            .top-nav { padding: 12px 15px; }
+            .content-body { padding: 15px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+    <!-- Sidebar: Hlavní projekty -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-brand">
+                <i class="fa-solid fa-microchip"></i>
+                <span>Blbovnik</span>
+            </div>
+            <button class="btn-close-sidebar" onclick="closeSidebar()"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <div class="project-section-title"><span>Přehled</span></div>
+        <ul class="project-list" style="max-height: none;">
+            <li class="project-item" id="sidebar-all-deadlines-item" onclick="selectGlobalAllDeadlines()">
+                <div class="project-info">
+                    <div class="project-color" style="background-color: var(--warning-color)"></div>
+                    <span><i class="fa-solid fa-bell" style="color: var(--warning-color); margin-right: 6px;"></i> Blížící se termíny (Vše)</span>
+                </div>
+            </li>
+        </ul>
+
+        <div class="project-section-title" style="margin-top: 15px;">
+            <span>Projekty</span>
+            <button class="btn-add-project" onclick="openProjectModal()"><i class="fa-solid fa-plus"></i></button>
+        </div>
+        <ul class="project-list" id="project-list-active"></ul>
+
+        <div class="project-section-title" style="margin-top: 25px; border-top: 1px solid var(--card-border); padding-top: 15px;">
+            <span><i class="fa-solid fa-box-archive"></i> Archiv</span>
+        </div>
+        <ul class="project-list" id="project-list-archived"></ul>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <header class="top-nav">
+            <div class="project-title-container">
+                <button class="mobile-toggle" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
+                <h1 class="project-title" id="current-project-title">Blížící se termíny (Vše)</h1>
+                <span id="current-project-archived-badge" class="archived-tag" style="display: none;">
+                    <i class="fa-solid fa-box-archive"></i> Archivováno
+                </span>
+            </div>
+        </header>
+
+        <div class="content-body">
+            <div id="firebase-warning" class="config-warning" style="display: none;">
+                <i class="fa-solid fa-triangle-exclamation fa-lg"></i>
+                <div><strong>Pozor:</strong> Běží v lokálním režimu.</div>
+            </div>
+
+            <div class="project-actions-bar" id="project-actions-bar" style="display: none;">
+                <button class="btn btn-secondary" onclick="editCurrentProjectName()">
+                    <i class="fa-solid fa-pen-to-square"></i> Upravit projekt
+                </button>
+                <button class="btn btn-archive" id="btn-toggle-archive-project" onclick="toggleArchiveCurrentProject()">
+                    <i class="fa-solid fa-box-archive"></i> Archivovat
+                </button>
+                <button class="btn btn-danger" onclick="deleteCurrentProject()" style="margin-left: auto;">
+                    <i class="fa-solid fa-trash"></i> Smazat
+                </button>
+            </div>
+
+            <!-- KROK 0: GLOBÁLNÍ PŘEHLED VŠECH TERMÍNŮ -->
+            <div id="view-global-all-deadlines">
+                <div class="project-section">
+                    <h2><i class="fa-solid fa-calendar-days" style="color: var(--warning-color);"></i> Všechny termíny ze všech projektů</h2>
+                    <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 0.95rem;">
+                        Zde vidíte kompletní přehled všech naplánovaných termínů[cite: 11]. Kliknutím na cestu u úkolu přejdete přímo do daného podprojektu[cite: 11].
+                    </p>
+                    <div class="deadline-list" id="global-all-deadlines-container"></div>
+                </div>
+            </div>
+
+            <!-- KROK 1: POHLED SEZNAMU PODPROJEKTŮ -->
+            <div id="view-subprojects-list" style="display: none;">
+                <div class="deadline-alert-box" id="global-deadline-box" style="display: none;">
+                    <div class="deadline-alert-title"><i class="fa-solid fa-bell" style="color: var(--warning-color);"></i> Blížící se termíny v tomto projektu</div>
+                    <div class="deadline-list" id="global-deadline-list"></div>
+                </div>
+
+                <div class="project-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h2><i class="fa-solid fa-folder-tree" style="color: var(--accent-color);"></i> Podprojekty</h2>
+                        <button class="btn btn-primary" onclick="openSubprojectModal()">
+                            <i class="fa-solid fa-plus"></i> Přidat podprojekt
+                        </button>
+                    </div>
+                    <div class="subproject-grid" id="subproject-grid"></div>
+                </div>
+            </div>
+
+            <!-- KROK 2: POHLED DETAILU PODPROJEKTU -->
+            <div id="view-subproject-detail" style="display: none;">
+                <div class="breadcrumb-nav">
+                    <span onclick="backToSubprojectsList()"><i class="fa-solid fa-arrow-left"></i> Zpět na podprojekty</span>
+                    <span>/</span>
+                    <strong id="active-subproject-breadcrumb-name" style="color: var(--text-primary);">Název podprojektu</strong>
+                </div>
+
+                <section class="project-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h2><i class="fa-solid fa-list-check" style="color: var(--accent-color);"></i> Úkoly & Termíny</h2>
+                        <button class="btn btn-primary" onclick="openTaskModal()">
+                            <i class="fa-solid fa-plus"></i> Přidat úkol / termín
+                        </button>
+                    </div>
+                    <div id="tasks-container"></div>
+                </section>
+
+                <section class="project-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h2><i class="fa-solid fa-file-lines" style="color: var(--success-color);"></i> Návody & Poznámky</h2>
+                        <button class="btn btn-primary" onclick="saveSubprojectDocumentation()">
+                            <i class="fa-solid fa-floppy-disk"></i> Uložit návody
+                        </button>
+                    </div>
+                    <div class="editor-container-wrapper">
+                        <div id="editor"></div>
+                    </div>
+                </section>
+
+                <section class="project-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h2><i class="fa-solid fa-images" style="color: var(--photo-color);"></i> Fotky</h2>
+                        <button class="btn btn-primary" onclick="document.getElementById('photo-input').click()">
+                            <i class="fa-solid fa-camera"></i> Nahrát fotku
+                        </button>
+                        <input type="file" id="photo-input" accept="image/*" style="display: none;" onchange="uploadPhoto(event)">
+                    </div>
+                    <div class="photo-grid" id="photo-grid"></div>
+                </section>
+
+                <section class="project-section">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                        <h2><i class="fa-solid fa-code" style="color: var(--folder-color);"></i> Kódy & Soubory</h2>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn btn-secondary" onclick="openFolderModal()">
+                                <i class="fa-solid fa-folder-plus" style="color: var(--folder-color);"></i> Nová složka
+                            </button>
+                            <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+                                <i class="fa-solid fa-upload"></i> Nahrát soubor
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="folder-breadcrumbs" id="folder-breadcrumbs"></div>
+                    <div class="folder-grid" id="folder-grid"></div>
+
+                    <div class="upload-area" onclick="document.getElementById('file-input').click()">
+                        <i class="fa-solid fa-file-arrow-up fa-2x" style="color: var(--accent-color); margin-bottom: 10px;"></i>
+                        <p>Klikněte pro nahrání souborů a kódů (podporuje složky a podadresáře)</p>
+                        <input type="file" id="file-input" style="display: none;" onchange="uploadFile(event)">
+                    </div>
+
+                    <ul class="file-list" id="file-list"></ul>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modaly -->
+    <div class="modal" id="modal-project">
+        <div class="modal-content">
+            <div class="modal-header" id="project-modal-title">Projekt</div>
+            <input type="hidden" id="project-edit-id">
+            <div class="form-group">
+                <label>Název projektu</label>
+                <input type="text" id="project-name-input" class="form-control" placeholder="např. Dům, Zahrada">
+            </div>
+            <div class="form-group">
+                <label>Barva</label>
+                <input type="color" id="project-color-input" class="form-control" value="#38bdf8" style="height: 40px; padding: 2px;">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-project')">Zrušit</button>
+                <button class="btn btn-primary" onclick="saveProject()">Uložit</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="modal-subproject">
+        <div class="modal-content">
+            <div class="modal-header" id="subproject-modal-title">Podprojekt</div>
+            <input type="hidden" id="subproject-edit-id">
+            <div class="form-group">
+                <label>Název podprojektu</label>
+                <input type="text" id="subproject-name-input" class="form-control" placeholder="např. Plot, Lavička">
+            </div>
+            <div class="form-group">
+                <label>Barva podprojektu</label>
+                <input type="color" id="subproject-color-input" class="form-control" value="#38bdf8" style="height: 40px; padding: 2px;">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-subproject')">Zrušit</button>
+                <button class="btn btn-primary" onclick="saveSubproject()">Uložit</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="modal-task">
+        <div class="modal-content">
+            <div class="modal-header" id="task-modal-title">Přidat úkol / termín</div>
+            <input type="hidden" id="task-edit-id">
+            <div class="form-group">
+                <label>Název (např. Výměna oleje, Lékař...)</label>
+                <input type="text" id="task-title-input" class="form-control" placeholder="např. STK na auto">
+            </div>
+            <div class="form-group">
+                <label>Termín (nepovinné)</label>
+                <input type="date" id="task-date-input" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>Priorita / Barva</label>
+                <select id="task-priority-input" class="form-control">
+                    <option value="p3">Nízká (Modrá)</option>
+                    <option value="p2" selected>Střední (Žlutá)</option>
+                    <option value="p1">Vysoká (Červená)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Popis / Poznámka</label>
+                <textarea id="task-desc-input" class="form-control" placeholder="Podrobnosti..."></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-task')">Zrušit</button>
+                <button class="btn btn-primary" onclick="saveTask()">Uložit</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="modal-folder">
+        <div class="modal-content">
+            <div class="modal-header">Nová složka</div>
+            <div class="form-group">
+                <label>Název složky</label>
+                <input type="text" id="folder-name-input" class="form-control">
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-folder')">Zrušit</button>
+                <button class="btn btn-primary" onclick="createFolder()">Vytvořit</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal pro přesun souboru / složky -->
+    <div class="modal" id="modal-move">
+        <div class="modal-content">
+            <div class="modal-header">Přesunout položku</div>
+            <input type="hidden" id="move-item-id">
+            <input type="hidden" id="move-item-type">
+            <div class="form-group">
+                <label>Vyberte cílovou složku:</label>
+                <select id="move-target-folder-select" class="form-control">
+                    <option value="root">📁 Kořenová složka</option>
+                </select>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button class="btn btn-secondary" onclick="closeModal('modal-move')">Zrušit</button>
+                <button class="btn btn-primary" onclick="executeMoveItem()">Přesunout</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const GITHUB_CONFIG = { owner: "ElPinduska", repo: "Blbovnik-ulozene_soubory", branch: "main" };
+
+        function getGitHubToken() {
+            let token = localStorage.getItem('blbovnik_github_token');
+            if (!token) {
+                token = prompt("Zadejte svůj GitHub Token:");
+                if (token) localStorage.setItem('blbovnik_github_token', token.trim());
+            }
+            return localStorage.getItem('blbovnik_github_token') || "";
+        }
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDFFT0K25p_NkrwjKz5tbLzCsV537Fp2RQ",
+            authDomain: "blbovnik.firebaseapp.com",
+            projectId: "blbovnik",
+            storageBucket: "blbovnik.firebasestorage.app",
+            messagingSenderId: "456657622324",
+            appId: "1:456657622324:web:9e2f4327ab83e31b1f4161"
+        };
+
+        let db = null;
+        let isFirebaseActive = false;
+
+        let firebaseProjects = [];
+        let firebaseSubprojects = [];
+        let firebaseTasks = [];
+        let firebaseFolders = [];
+        let firebaseFiles = [];
+        let firebasePhotos = [];
+        let localFiles = [];
+
+        try {
+            firebaseProjects = JSON.parse(localStorage.getItem('cache_projects') || '[]');
+            firebaseSubprojects = JSON.parse(localStorage.getItem('cache_subprojects') || '[]');
+            firebaseTasks = JSON.parse(localStorage.getItem('cache_tasks') || '[]');
+            firebaseFolders = JSON.parse(localStorage.getItem('cache_folders') || '[]');
+            localFiles = JSON.parse(localStorage.getItem('cache_local_files') || '[]');
+        } catch(e) {
+            console.error("Chyba při parsování localStorage:", e);
+        }
+
+        if (firebaseConfig.apiKey !== "VASE_API_KEY") {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            isFirebaseActive = true;
+        }
+
+        hljs.configure({ languages: ['cpp', 'python', 'javascript', 'html', 'bash'] });
+        const quill = new Quill('#editor', {
+            theme: 'snow',
+            placeholder: 'Zde pište návody a poznámky k podprojektu...',
+            modules: { syntax: true, toolbar: [['bold', 'italic', 'underline'], [{ 'list': 'ordered'}, { 'list': 'bullet' }], ['code-block'], ['clean']] }
+        });
+
+        let currentProjectId = 'ALL_DEADLINES';
+        let currentSubprojectId = null;
+        let currentFolderId = 'root';
+
+        let localProjects = [{ id: 'p1', name: 'Barák', color: '#38bdf8', archived: false, order: 0 }];
+        let localSubprojects = [{ id: 'sp1', projectId: 'p1', name: 'Plot', color: '#22c55e', order: 0, docContent: '<p>Návody pro plot</p>' }];
+        let localTasks = [{ id: 't1', subprojectId: 'sp1', title: 'Koupit sloupky', description: 'Nezapomenout galvanizované', priority: 'p2', completed: false, order: 0, dueDate: '' }];
+        let localFolders = [];
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('sidebar-overlay').classList.toggle('active');
+        }
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('sidebar-overlay').classList.remove('active');
+        }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+        function getDueDateStatus(dueDateStr) {
+            if (!dueDateStr) return { status: '', text: '' };
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const due = new Date(dueDateStr);
+            due.setHours(0,0,0,0);
+            const diffDays = Math.round((due - today) / (1000 * 60 * 60 * 24));
+            const formattedDate = due.toLocaleDateString('cs-CZ');
+
+            if (diffDays < 0) return { status: 'red', text: `Prošlé (${formattedDate})`, diff: diffDays };
+            if (diffDays <= 7) return { status: 'orange', text: `Za ${diffDays === 0 ? 'dnes' : diffDays + ' dny'} (${formattedDate})`, diff: diffDays };
+            if (diffDays <= 14) return { status: 'yellow', text: `Za ${diffDays} dní (${formattedDate})`, diff: diffDays };
+            return { status: '', text: formattedDate, diff: diffDays };
+        }
+
+        async function downloadCleanFile(url, cleanFileName) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Chyba při stahování');
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = cleanFileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+            } catch (err) {
+                alert('Nepodařilo se stáhnout soubor: ' + err.message);
+            }
+        }
+
+        async function previewFile(url, fileName) {
+            const lowerName = fileName.toLowerCase();
+            if (lowerName.endsWith('.pdf')) {
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error('Chyba při načítání PDF');
+                    const arrayBuffer = await response.arrayBuffer();
+                    const pdfBlob = new Blob([arrayBuffer], { type: 'application/pdf' });
+                    const blobUrl = URL.createObjectURL(pdfBlob);
+                    window.open(blobUrl, '_blank');
+                } catch (err) {
+                    alert('Nepodařilo se otevřít náhled PDF: ' + err.message);
+                }
+            } else {
+                window.open(url, '_blank');
+            }
+        }
+
+        let draggedProjId = null;
+        function handleProjDragStart(e, id) { draggedProjId = id; e.dataTransfer.effectAllowed = 'move'; setTimeout(() => e.target.classList.add('dragging'), 0); }
+        function handleProjDragEnd(e) { e.target.classList.remove('dragging'); draggedProjId = null; }
+        function handleProjDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+        function handleProjDrop(e, targetId) {
+            e.preventDefault();
+            if (!draggedProjId || draggedProjId === targetId) return;
+            let projects = isFirebaseActive ? firebaseProjects : localProjects;
+            let active = projects.filter(p => !p.archived);
+            active.sort((a, b) => (a.order || 0) - (b.order || 0));
+            const dIdx = active.findIndex(p => p.id === draggedProjId);
+            const tIdx = active.findIndex(p => p.id === targetId);
+            if (dIdx === -1 || tIdx === -1) return;
+            const [moved] = active.splice(dIdx, 1);
+            active.splice(tIdx, 0, moved);
+            active.forEach((p, idx) => {
+                p.order = idx;
+                if (isFirebaseActive) db.collection('projects').doc(p.id).update({ order: idx });
+            });
+            renderProjects();
+        }
+
+        function renderProjects() {
+            const activeList = document.getElementById('project-list-active');
+            const archivedList = document.getElementById('project-list-archived');
+            if (!activeList || !archivedList) return;
+
+            activeList.innerHTML = ''; archivedList.innerHTML = '';
+
+            let projects = isFirebaseActive ? firebaseProjects : localProjects;
+            if (!Array.isArray(projects)) projects = [];
+            projects.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            projects.forEach(p => {
+                const li = document.createElement('li');
+                li.className = `project-item ${p.id === currentProjectId ? 'active' : ''} ${p.archived ? 'archived' : ''}`;
+                if (!p.archived) {
+                    li.setAttribute('draggable', 'true');
+                    li.ondragstart = (e) => handleProjDragStart(e, p.id);
+                    li.ondragend = (e) => handleProjDragEnd(e);
+                    li.ondragover = (e) => handleProjDragOver(e);
+                    li.ondrop = (e) => handleProjDrop(e, p.id);
+                }
+                li.onclick = () => selectProject(p.id);
+                li.innerHTML = `<div class="project-info"><div class="project-color" style="background-color: ${p.color || '#38bdf8'}"></div><span>${escapeHtml(p.name || '')}</span></div>`;
+                (p.archived ? archivedList : activeList).appendChild(li);
+            });
+
+            const allDeadlinesLi = document.getElementById('sidebar-all-deadlines-item');
+            if (allDeadlinesLi) {
+                if (currentProjectId === 'ALL_DEADLINES') {
+                    allDeadlinesLi.classList.add('active');
+                } else {
+                    allDeadlinesLi.classList.remove('active');
+                }
+            }
+        }
+
+        function selectProject(id) {
+            currentProjectId = id;
+            currentSubprojectId = null;
+            renderProjects();
+
+            let projects = isFirebaseActive ? firebaseProjects : localProjects;
+            let project = projects.find(p => p.id === id);
+            if (project) {
+                document.getElementById('current-project-title').innerText = project.name;
+                document.getElementById('current-project-archived-badge').style.display = project.archived ? 'inline-flex' : 'none';
+                document.getElementById('btn-toggle-archive-project').innerHTML = project.archived ? '<i class="fa-solid fa-rotate-left"></i> Obnovit' : '<i class="fa-solid fa-box-archive"></i> Archivovat';
+                document.getElementById('project-actions-bar').style.display = 'flex';
+                backToSubprojectsList();
+            }
+            closeSidebar();
+        }
+
+        function selectGlobalAllDeadlines() {
+            currentProjectId = 'ALL_DEADLINES';
+            currentSubprojectId = null;
+            renderProjects();
+
+            document.getElementById('current-project-title').innerText = 'Blížící se termíny (Vše)';
+            document.getElementById('current-project-archived-badge').style.display = 'none';
+            document.getElementById('project-actions-bar').style.display = 'none';
+
+            document.getElementById('view-subprojects-list').style.display = 'none';
+            document.getElementById('view-subproject-detail').style.display = 'none';
+            document.getElementById('view-global-all-deadlines').style.display = 'block';
+
+            renderGlobalAllDeadlinesView();
+            closeSidebar();
+        }
+
+        function renderGlobalAllDeadlinesView() {
+            const container = document.getElementById('global-all-deadlines-container');
+            if (!container) return;
+            container.innerHTML = '';
+
+            let projects = isFirebaseActive ? firebaseProjects : localProjects;
+            let subs = isFirebaseActive ? firebaseSubprojects : localSubprojects;
+            let tasks = isFirebaseActive ? firebaseTasks : localTasks;
+
+            let allTasksWithDate = tasks.filter(t => !t.completed && t.dueDate);
+            let sortedTasks = [];
+
+            allTasksWithDate.forEach(t => {
+                let evalDate = getDueDateStatus(t.dueDate);
+                let sp = subs.find(s => s.id === t.subprojectId);
+                let pr = sp ? projects.find(p => p.id === sp.projectId) : null;
+                sortedTasks.push({
+                    task: t,
+                    subId: sp ? sp.id : null,
+                    projId: pr ? pr.id : null,
+                    subName: sp ? sp.name : 'Neznámý podprojekt',
+                    projName: pr ? pr.name : 'Neznámý projekt',
+                    eval: evalDate
+                });
+            });
+
+            sortedTasks.sort((a, b) => a.eval.diff - b.eval.diff);
+
+            if (sortedTasks.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary);">Zatím žádné naplánované termíny v žádném projektu.</p>';
+                return;
+            }
+
+            sortedTasks.forEach(item => {
+                const div = document.createElement('div');
+                div.className = `deadline-item ${item.eval.status}`;
+                
+                const pathHtml = item.projId && item.subId 
+                    ? `<a class="deadline-path-link" onclick="jumpToTaskLocation('${item.projId}', '${item.subId}')"><i class="fa-solid fa-folder-open"></i> ${escapeHtml(item.projName)} / ${escapeHtml(item.subName)}</a>`
+                    : `<i class="fa-solid fa-folder-open"></i> ${escapeHtml(item.projName)} / ${escapeHtml(item.subName)}`;
+
+                div.innerHTML = `
+                    <div>
+                        <strong style="font-size: 1rem;">${escapeHtml(item.task.title)}</strong>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 3px;">
+                            ${pathHtml}
+                        </div>
+                    </div>
+                    <span class="badge badge-date ${item.eval.status}">${item.eval.text}</span>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function jumpToTaskLocation(projId, subId) {
+            currentProjectId = projId;
+            renderProjects();
+
+            let projects = isFirebaseActive ? firebaseProjects : localProjects;
+            let project = projects.find(p => p.id === projId);
+            if (project) {
+                document.getElementById('current-project-title').innerText = project.name;
+                document.getElementById('current-project-archived-badge').style.display = project.archived ? 'inline-flex' : 'none';
+                document.getElementById('btn-toggle-archive-project').innerHTML = project.archived ? '<i class="fa-solid fa-rotate-left"></i> Obnovit' : '<i class="fa-solid fa-box-archive"></i> Archivovat';
+                document.getElementById('project-actions-bar').style.display = 'flex';
+            }
+
+            selectSubproject(subId);
+        }
+
+        function backToSubprojectsList() {
+            currentSubprojectId = 'LIST';
+            document.getElementById('view-global-all-deadlines').style.display = 'none';
+            document.getElementById('view-subproject-detail').style.display = 'none';
+            document.getElementById('view-subprojects-list').style.display = 'block';
+            renderSubprojects();
+            renderGlobalDeadlines();
+        }
+
+        function renderGlobalDeadlines() {
+            const box = document.getElementById('global-deadline-box');
+            const listContainer = document.getElementById('global-deadline-list');
+            if (!box || !listContainer) return;
+
+            listContainer.innerHTML = '';
+            if (!currentProjectId || currentProjectId === 'ALL_DEADLINES') { box.style.display = 'none'; return; }
+
+            let subs = (isFirebaseActive ? firebaseSubprojects : localSubprojects).filter(s => s.projectId === currentProjectId);
+            let subIds = subs.map(s => s.id);
+            let tasks = (isFirebaseActive ? firebaseTasks : localTasks).filter(t => subIds.includes(t.subprojectId) && !t.completed && t.dueDate);
+
+            let upcoming = [];
+            tasks.forEach(t => {
+                let evalDate = getDueDateStatus(t.dueDate);
+                if (evalDate.diff !== undefined && evalDate.diff <= 14) {
+                    let sp = subs.find(s => s.id === t.subprojectId);
+                    upcoming.push({ task: t, subName: sp ? sp.name : '', eval: evalDate });
+                }
+            });
+
+            upcoming.sort((a, b) => a.eval.diff - b.eval.diff);
+
+            if (upcoming.length === 0) {
+                box.style.display = 'none';
+                return;
+            }
+
+            box.style.display = 'block';
+            upcoming.forEach(item => {
+                const div = document.createElement('div');
+                div.className = `deadline-item ${item.eval.status}`;
+                div.innerHTML = `
+                    <div>
+                        <strong>${escapeHtml(item.task.title)}</strong> 
+                        <span style="font-size: 0.8rem; color: var(--text-secondary); margin-left: 8px;">(${escapeHtml(item.subName)})</span>
+                    </div>
+                    <span class="badge badge-date ${item.eval.status}">${item.eval.text}</span>
+                `;
+                listContainer.appendChild(div);
+            });
+        }
+
+        let draggedSubProjId = null;
+        function handleSubDragStart(e, id) { draggedSubProjId = id; e.dataTransfer.effectAllowed = 'move'; setTimeout(() => e.target.classList.add('dragging'), 0); }
+        function handleSubDragEnd(e) { e.target.classList.remove('dragging'); draggedSubProjId = null; }
+        function handleSubDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+        function handleSubDrop(e, targetId) {
+            e.preventDefault();
+            if (!draggedSubProjId || draggedSubProjId === targetId) return;
+            let subs = (isFirebaseActive ? firebaseSubprojects : localSubprojects).filter(s => s.projectId === currentProjectId);
+            subs.sort((a, b) => (a.order || 0) - (b.order || 0));
+            const dIdx = subs.findIndex(s => s.id === draggedSubProjId);
+            const tIdx = subs.findIndex(s => s.id === targetId);
+            if (dIdx === -1 || tIdx === -1) return;
+            const [moved] = subs.splice(dIdx, 1);
+            subs.splice(tIdx, 0, moved);
+            subs.forEach((s, idx) => {
+                s.order = idx;
+                if (isFirebaseActive) db.collection('subprojects').doc(s.id).update({ order: idx });
+            });
+            renderSubprojects();
+        }
+
+        function renderSubprojects() {
+            const grid = document.getElementById('subproject-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            if (!currentProjectId || currentProjectId === 'ALL_DEADLINES') return;
+
+            let subs = (isFirebaseActive ? firebaseSubprojects : localSubprojects).filter(s => s.projectId === currentProjectId);
+            subs.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            if (subs.length === 0) {
+                grid.innerHTML = '<p style="color: var(--text-secondary);">Zatím žádné podprojekty. Klikněte na "Přidat podprojekt".</p>';
+                return;
+            }
+
+            subs.forEach(sp => {
+                const card = document.createElement('div');
+                card.className = 'subproject-card';
+                card.setAttribute('draggable', 'true');
+                card.ondragstart = (e) => handleSubDragStart(e, sp.id);
+                card.ondragend = (e) => handleSubDragEnd(e);
+                card.ondragover = (e) => handleSubDragOver(e);
+                card.ondrop = (e) => handleSubDrop(e, sp.id);
+                card.onclick = () => selectSubproject(sp.id);
+
+                card.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="project-color" style="background-color: ${sp.color || '#38bdf8'}"></div>
+                        <span style="font-weight: 600; font-size: 1.05rem;">${escapeHtml(sp.name || '')}</span>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: 5px; margin-top: 10px;">
+                        <button class="btn-icon" title="Upravit" onclick="event.stopPropagation(); openSubprojectModal('${sp.id}')"><i class="fa-solid fa-pen"></i></button>
+                        <button class="btn-icon" style="color: var(--danger-color);" title="Smazat" onclick="event.stopPropagation(); deleteSubproject('${sp.id}')"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function selectSubproject(subId) {
+            currentSubprojectId = subId;
+            currentFolderId = 'root';
+            document.getElementById('view-global-all-deadlines').style.display = 'none';
+            document.getElementById('view-subprojects-list').style.display = 'none';
+            document.getElementById('view-subproject-detail').style.display = 'block';
+
+            let subs = isFirebaseActive ? firebaseSubprojects : localSubprojects;
+            let sub = subs.find(s => s.id === subId);
+            if (sub) {
+                document.getElementById('active-subproject-breadcrumb-name').innerText = sub.name;
+                quill.root.innerHTML = sub.docContent || '';
+            }
+            renderTasks();
+            renderPhotos();
+            renderExplorer();
+        }
+
+        let draggedTaskId = null;
+        function handleTaskDragStart(e, id) { draggedTaskId = id; e.dataTransfer.effectAllowed = 'move'; setTimeout(() => e.target.classList.add('dragging'), 0); }
+        function handleTaskDragEnd(e) { e.target.classList.remove('dragging'); draggedTaskId = null; }
+        function handleTaskDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+        function handleTaskDrop(e, targetId) {
+            e.preventDefault();
+            if (!draggedTaskId || draggedTaskId === targetId) return;
+            let tasks = (isFirebaseActive ? firebaseTasks : localTasks).filter(t => t.subprojectId === currentSubprojectId);
+            tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+            const dIdx = tasks.findIndex(t => t.id === draggedTaskId);
+            const tIdx = tasks.findIndex(t => t.id === targetId);
+            if (dIdx === -1 || tIdx === -1) return;
+            const [moved] = tasks.splice(dIdx, 1);
+            tasks.splice(tIdx, 0, moved);
+            tasks.forEach((t, idx) => {
+                t.order = idx;
+                if (isFirebaseActive) db.collection('tasks').doc(t.id).update({ order: idx });
+            });
+            renderTasks();
+        }
+
+        function renderTasks() {
+            const container = document.getElementById('tasks-container');
+            if (!container) return;
+            container.innerHTML = '';
+            if (!currentSubprojectId) return;
+
+            let tasks = (isFirebaseActive ? firebaseTasks : localTasks).filter(t => t.subprojectId === currentSubprojectId);
+            tasks.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            if (tasks.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-secondary);">Žádné úkoly ani termíny.</p>';
+                return;
+            }
+
+            tasks.forEach(t => {
+                const card = document.createElement('div');
+                card.className = 'task-card';
+                card.setAttribute('draggable', 'true');
+                card.ondragstart = (e) => handleTaskDragStart(e, t.id);
+                card.ondragend = (e) => handleTaskDragEnd(e);
+                card.ondragover = (e) => handleTaskDragOver(e);
+                card.ondrop = (e) => handleTaskDrop(e, t.id);
+
+                const descHtml = t.description && t.description.trim() !== '' 
+                    ? `<div class="task-description">${escapeHtml(t.description)}</div>` 
+                    : '';
+
+                let dateBadgeHtml = '';
+                if (t.dueDate) {
+                    let evalDate = getDueDateStatus(t.dueDate);
+                    dateBadgeHtml = `<span class="badge badge-date ${evalDate.status}"><i class="fa-regular fa-calendar"></i> ${evalDate.text}</span>`;
+                }
+
+                card.innerHTML = `
+                    <div class="task-main-row">
+                        <div class="task-left">
+                            <input type="checkbox" class="task-checkbox" style="width:20px;height:20px;accent-color:var(--accent-color);cursor:pointer;" ${t.completed ? 'checked' : ''} onchange="toggleTask('${t.id}', this.checked)">
+                            <span class="task-title ${t.completed ? 'completed' : ''}">${escapeHtml(t.title || '')}</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            ${dateBadgeHtml}
+                            <span class="badge badge-${t.priority}">${t.priority === 'p1' ? 'Vysoká' : t.priority === 'p2' ? 'Střední' : 'Nízká'}</span>
+                            <button class="btn-icon" title="Upravit" onclick="openTaskModal('${t.id}')"><i class="fa-solid fa-pen"></i></button>
+                            <button class="btn-icon" style="color: var(--danger-color);" title="Smazat" onclick="deleteTask('${t.id}')"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
+                    ${descHtml}
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function toggleTask(id, completed) {
+            if (isFirebaseActive) {
+                db.collection('tasks').doc(id).update({ completed });
+            } else {
+                let t = localTasks.find(x => x.id === id);
+                if (t) t.completed = completed;
+                renderTasks();
+            }
+        }
+
+        function saveSubprojectDocumentation() {
+            if (!currentSubprojectId) return;
+            const htmlContent = quill.root.innerHTML;
+            if (isFirebaseActive) {
+                db.collection('subprojects').doc(currentSubprojectId).update({ docContent: htmlContent }).then(() => alert('Návody uloženy!'));
+            } else {
+                let sub = localSubprojects.find(s => s.id === currentSubprojectId);
+                if (sub) sub.docContent = htmlContent;
+                alert('Návody uloženy lokálně!');
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes || isNaN(bytes)) return '';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function sendPhotoToGitHub(base64Content, userChoiceName, exactBytes, token) {
+            const filePath = `photos/subproject_${currentSubprojectId}/${Date.now()}_${userChoiceName}`;
+            fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${filePath}`, {
+                method: 'PUT',
+                headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: 'Upload photo via Blbovnik', content: base64Content, branch: GITHUB_CONFIG.branch })
+            }).then(res => res.json()).then(data => {
+                const downloadUrl = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${filePath}`;
+                if (isFirebaseActive) {
+                    db.collection('photos').add({ subprojectId: currentSubprojectId, folderId: currentFolderId, name: userChoiceName, url: downloadUrl, size: exactBytes });
+                } else {
+                    localFiles.push({ id: 'ph_' + Date.now(), subprojectId: currentSubprojectId, folderId: currentFolderId, isPhoto: true, name: userChoiceName, content: downloadUrl, size: exactBytes });
+                    renderPhotos();
+                }
+                alert('Fotka nahrána!');
+            });
+        }
+
+        function uploadPhoto(event) {
+            const file = event.target.files[0];
+            if (!file || !currentSubprojectId) return;
+
+            const userChoiceName = prompt('Název fotky:', file.name);
+            if (!userChoiceName) return;
+
+            const resizeChoice = confirm("Chcete fotku automaticky zmenšit pro úsporu místa a rychlejší načítání?\n\nOK = Zmenšit na Full HD\nZrušit = Nahrát v plné (původní) velikosti bez úprav");
+
+            const token = getGitHubToken();
+            if (!token) return alert('Chybí GitHub token!');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const originalDataUrl = e.target.result;
+
+                if (!resizeChoice) {
+                    const base64Content = originalDataUrl.split(',')[1];
+                    sendPhotoToGitHub(base64Content, userChoiceName, file.size, token);
+                } else {
+                    const img = new Image();
+                    img.src = originalDataUrl;
+                    img.onload = function() {
+                        let canvas = document.createElement('canvas');
+                        let ctx = canvas.getContext('2d');
+                        let width = img.width;
+                        let height = img.height;
+
+                        const MAX_WIDTH = 1920;
+                        const MAX_HEIGHT = 1080;
+                        if (width > height) {
+                            if (width > MAX_WIDTH) {
+                                height *= MAX_WIDTH / width;
+                                width = MAX_WIDTH;
+                            }
+                        } else {
+                            if (height > MAX_HEIGHT) {
+                                width *= MAX_HEIGHT / height;
+                                height = MAX_HEIGHT;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                        const base64Content = resizedDataUrl.split(',')[1];
+                        const estimatedBytes = Math.round((base64Content.length * 3) / 4);
+                        sendPhotoToGitHub(base64Content, userChoiceName, estimatedBytes, token);
+                    };
+                }
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        }
+
+        function renderPhotos() {
+            const grid = document.getElementById('photo-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            const allPhotos = [...(isFirebaseActive ? firebasePhotos : []), ...localFiles].filter(f => f.isPhoto && f.subprojectId === currentSubprojectId && (f.folderId || 'root') === currentFolderId);
+
+            if (allPhotos.length === 0) {
+                grid.innerHTML = '<p style="color: var(--text-secondary); grid-column: 1/-1;">Zatím žádné fotky v této složce.</p>';
+                return;
+            }
+
+            allPhotos.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'photo-card';
+                const sizeStr = formatBytes(p.size);
+                const sizeTag = sizeStr ? `<span class="size-tag">${sizeStr}</span>` : '';
+                const photoUrl = p.content || p.url;
+                const safeName = escapeHtml(p.name || '');
+
+                card.innerHTML = `
+                    <img src="${photoUrl}" onclick="window.open('${photoUrl}', '_blank')">
+                    <div class="photo-footer">
+                        <div class="photo-info-row">
+                            <span style="font-weight: 600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:110px;">${safeName}</span>
+                            ${sizeTag}
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                            <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.75rem;" onclick="downloadCleanFile('${photoUrl}', '${safeName}')"><i class="fa-solid fa-download"></i></button>
+                            <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 0.75rem;" onclick="openMoveModal('${p.id}', 'photo', '${safeName}')" title="Přesunout"><i class="fa-solid fa-folder-tree"></i></button>
+                            <button class="btn-icon" style="color: var(--danger-color); padding: 2px 4px;" onclick="deletePhoto('${p.id}', '${safeName}')"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function deletePhoto(id, name) {
+            if (!confirm(`Smazat fotku "${name}"?`)) return;
+            localFiles = localFiles.filter(f => f.id !== id);
+            renderPhotos();
+            if (isFirebaseActive) db.collection('photos').doc(id).delete();
+        }
+
+        function createFolder() {
+            const name = document.getElementById('folder-name-input').value.trim();
+            if (!name || !currentSubprojectId) return;
+            if (isFirebaseActive) {
+                db.collection('folders').add({ subprojectId: currentSubprojectId, parentId: currentFolderId, name }).then(() => closeModal('modal-folder'));
+            } else {
+                localFolders.push({ id: 'fld_' + Date.now(), subprojectId: currentSubprojectId, parentId: currentFolderId, name });
+                closeModal('modal-folder');
+                renderExplorer();
+            }
+        }
+
+        function renderExplorer() {
+            renderBreadcrumbs();
+            renderFolderGrid();
+            renderFiles();
+            renderPhotos();
+        }
+
+        function renderBreadcrumbs() {
+            const container = document.getElementById('folder-breadcrumbs');
+            if (!container) return;
+            container.innerHTML = `<span class="breadcrumb-item ${currentFolderId === 'root' ? 'breadcrumb-active' : ''}" onclick="currentFolderId='root'; renderExplorer();"><i class="fa-solid fa-house"></i> Kořenová složka</span>`;
+        }
+
+        function renderFolderGrid() {
+            const grid = document.getElementById('folder-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            const folders = isFirebaseActive ? firebaseFolders : localFolders;
+            const sub = folders.filter(f => f.subprojectId === currentSubprojectId && f.parentId === currentFolderId);
+            grid.style.display = sub.length ? 'grid' : 'none';
+
+            sub.forEach(f => {
+                const card = document.createElement('div');
+                card.className = 'folder-card';
+                card.onclick = () => { currentFolderId = f.id; renderExplorer(); };
+                card.innerHTML = `
+                    <div class="folder-info"><i class="fa-solid fa-folder"></i><span>${escapeHtml(f.name || '')}</span></div>
+                    <div style="display: flex; gap: 4px;">
+                        <button class="btn-icon" title="Přesunout složku" onclick="event.stopPropagation(); openMoveModal('${f.id}', 'folder', '${escapeHtml(f.name || '')}')"><i class="fa-solid fa-folder-tree"></i></button>
+                        <button class="btn-icon" style="color: var(--danger-color);" title="Smazat" onclick="event.stopPropagation(); deleteFolder('${f.id}', '${escapeHtml(f.name || '')}')"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function deleteFolder(id, name) {
+            if (!confirm(`Smazat složku "${name}"?`)) return;
+            if (isFirebaseActive) db.collection('folders').doc(id).delete();
+            else {
+                localFolders = localFolders.filter(f => f.id !== id);
+                renderExplorer();
+            }
+        }
+
+        function uploadFile(event) {
+            const file = event.target.files[0];
+            if (!file || !currentSubprojectId) return;
+            const userChoiceName = prompt('Název souboru:', file.name);
+            if (!userChoiceName) return;
+
+            const token = getGitHubToken();
+            if (!token) return alert('Chybí GitHub token!');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const fullDataUrl = e.target.result;
+                const base64Content = fullDataUrl.split(',')[1];
+                const filePath = `uploads/subproject_${currentSubprojectId}/${Date.now()}_${userChoiceName}`;
+
+                fetch(`https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${filePath}`, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: 'Upload via Blbovnik', content: base64Content, branch: GITHUB_CONFIG.branch })
+                }).then(res => res.json()).then(data => {
+                    const downloadUrl = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${filePath}`;
+                    if (isFirebaseActive) {
+                        db.collection('files').add({ subprojectId: currentSubprojectId, folderId: currentFolderId, name: userChoiceName, content: downloadUrl, size: file.size });
+                    } else {
+                        localFiles.push({ id: 'f_' + Date.now(), subprojectId: currentSubprojectId, folderId: currentFolderId, name: userChoiceName, content: downloadUrl, size: file.size });
+                        renderExplorer();
+                    }
+                    alert('Soubor nahrán!');
+                });
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        }
+
+        function renderFiles() {
+            const list = document.getElementById('file-list');
+            if (!list) return;
+            list.innerHTML = '';
+            const allFiles = [...(isFirebaseActive ? firebaseFiles : []), ...localFiles].filter(f => f.subprojectId === currentSubprojectId && (f.folderId || 'root') === currentFolderId && !f.isPhoto);
+
+            if (allFiles.length === 0) {
+                list.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">Žádné soubory v této složce.</p>';
+                return;
+            }
+
+            allFiles.forEach(f => {
+                const li = document.createElement('li');
+                li.className = 'file-item';
+                const safeName = escapeHtml(f.name || '');
+                const sizeStr = formatBytes(f.size);
+                const sizeTag = sizeStr ? `<span class="size-tag" style="margin-left: 10px;">${sizeStr}</span>` : '';
+
+                li.innerHTML = `
+                    <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+                        <span><i class="fa-solid fa-file" style="color: var(--accent-color); margin-right: 6px;"></i> ${safeName}</span>
+                        ${sizeTag}
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" onclick="previewFile('${f.content}', '${safeName}')"><i class="fa-solid fa-eye"></i> Náhled</button>
+                        <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" onclick="downloadCleanFile('${f.content}', '${safeName}')"><i class="fa-solid fa-download"></i> Stáhnout</button>
+                        <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" onclick="openMoveModal('${f.id}', 'file', '${safeName}')"><i class="fa-solid fa-folder-tree"></i> Přesunout</button>
+                        <button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.8rem;" onclick="deleteFile('${f.id}', '${safeName}')"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        function deleteFile(id, name) {
+            if (!confirm(`Smazat soubor "${name}"?`)) return;
+            localFiles = localFiles.filter(f => f.id !== id);
+            renderExplorer();
+            if (isFirebaseActive) db.collection('files').doc(id).delete();
+        }
+
+        // --- FUNKCE PRO PŘESUN POLOŽEK ---
+        function openMoveModal(itemId, itemType, itemName) {
+            document.getElementById('move-item-id').value = itemId;
+            document.getElementById('move-item-type').value = itemType;
+
+            const select = document.getElementById('move-target-folder-select');
+            select.innerHTML = '<option value="root">📁 Kořenová složka</option>';
+
+            const folders = isFirebaseActive ? firebaseFolders : localFolders;
+            const subFolders = folders.filter(f => f.subprojectId === currentSubprojectId);
+
+            subFolders.forEach(f => {
+                // Zamezení přesunu složky sama do sebe
+                if (itemType === 'folder' && f.id === itemId) return;
+                const opt = document.createElement('option');
+                opt.value = f.id;
+                opt.text = `📁 ${f.name}`;
+                select.appendChild(opt);
+            });
+
+            document.getElementById('modal-move').style.display = 'flex';
+        }
+
+        function executeMoveItem() {
+            const itemId = document.getElementById('move-item-id').value;
+            const itemType = document.getElementById('move-item-type').value;
+            const targetFolderId = document.getElementById('move-target-folder-select').value;
+
+            if (isFirebaseActive) {
+                let collectionName = 'files';
+                if (itemType === 'folder') collectionName = 'folders';
+                if (itemType === 'photo') collectionName = 'photos';
+
+                db.collection(collectionName).doc(itemId).update({ folderId: targetFolderId })
+                    .then(() => {
+                        closeModal('modal-move');
+                        alert('Položka byla úspěšně přesunuta!');
+                    })
+                    .catch(err => alert('Chyba při přesunu: ' + err.message));
+            } else {
+                if (itemType === 'folder') {
+                    let f = localFolders.find(x => x.id === itemId);
+                    if (f) f.parentId = targetFolderId;
+                } else {
+                    let f = localFiles.find(x => x.id === itemId);
+                    if (f) f.folderId = targetFolderId;
+                }
+                closeModal('modal-move');
+                renderExplorer();
+                alert('Položka byla úspěšně přesunuta!');
+            }
+        }
+        // ---------------------------------
+
+        function openProjectModal(id = null) {
+            document.getElementById('project-edit-id').value = id || '';
+            document.getElementById('project-name-input').value = id ? (isFirebaseActive ? firebaseProjects : localProjects).find(p => p.id === id).name : '';
+            document.getElementById('modal-project').style.display = 'flex';
+        }
+
+        function saveProject() {
+            const editId = document.getElementById('project-edit-id').value;
+            const name = document.getElementById('project-name-input').value.trim();
+            const color = document.getElementById('project-color-input').value;
+            if (!name) return;
+
+            let projects = isFirebaseActive ? firebaseProjects : localProjects;
+            const maxOrder = projects.length ? Math.max(...projects.map(p => p.order || 0)) + 1 : 0;
+
+            if (editId) {
+                if (isFirebaseActive) db.collection('projects').doc(editId).update({ name, color }).then(() => closeModal('modal-project'));
+                else { let p = localProjects.find(x => x.id === editId); if(p){p.name=name;p.color=color;} closeModal('modal-project'); renderProjects(); }
+            } else {
+                if (isFirebaseActive) db.collection('projects').add({ name, color, archived: false, order: maxOrder }).then(doc => { closeModal('modal-project'); selectProject(doc.id); });
+                else { const newP = { id: 'p_'+Date.now(), name, color, archived: false, order: maxOrder }; localProjects.push(newP); closeModal('modal-project'); selectProject(newP.id); }
+            }
+        }
+
+        function openSubprojectModal(id = null) {
+            document.getElementById('subproject-edit-id').value = id || '';
+            document.getElementById('subproject-name-input').value = id ? (isFirebaseActive ? firebaseSubprojects : localSubprojects).find(s => s.id === id).name : '';
+            document.getElementById('modal-subproject').style.display = 'flex';
+        }
+
+        function saveSubproject() {
+            const editId = document.getElementById('subproject-edit-id').value;
+            const name = document.getElementById('subproject-name-input').value.trim();
+            const color = document.getElementById('subproject-color-input').value;
+            if (!name || !currentProjectId) return;
+
+            let subs = isFirebaseActive ? firebaseSubprojects : localSubprojects;
+            const projSubs = subs.filter(s => s.projectId === currentProjectId);
+            const maxOrder = projSubs.length ? Math.max(...projSubs.map(s => s.order || 0)) + 1 : 0;
+
+            if (editId) {
+                if (isFirebaseActive) db.collection('subprojects').doc(editId).update({ name, color }).then(() => closeModal('modal-subproject'));
+                else { let s = localSubprojects.find(x => x.id === editId); if(s){s.name=name;s.color=color;} closeModal('modal-subproject'); renderSubprojects(); }
+            } else {
+                if (isFirebaseActive) db.collection('subprojects').add({ projectId: currentProjectId, name, color, order: maxOrder, docContent: '' }).then(() => closeModal('modal-subproject'));
+                else { localSubprojects.push({ id: 'sp_'+Date.now(), projectId: currentProjectId, name, color, order: maxOrder, docContent: '' }); closeModal('modal-subproject'); renderSubprojects(); }
+            }
+        }
+
+        function deleteSubproject(id) {
+            let subs = isFirebaseActive ? firebaseSubprojects : localSubprojects;
+            let sub = subs.find(s => s.id === id);
+            const name = sub ? sub.name : 'podprojekt';
+
+            if (!confirm(`Smazat podprojekt "${name}"?`)) return;
+
+            if (isFirebaseActive) db.collection('subprojects').doc(id).delete();
+            else { localSubprojects = localSubprojects.filter(s => s.id !== id); renderSubprojects(); }
+        }
+
+        function openTaskModal(id = null) {
+            document.getElementById('task-edit-id').value = id || '';
+            let tasks = isFirebaseActive ? firebaseTasks : localTasks;
+            let t = id ? tasks.find(x => x.id === id) : null;
+
+            document.getElementById('task-title-input').value = t ? t.title : '';
+            document.getElementById('task-date-input').value = t ? (t.dueDate || '') : '';
+            document.getElementById('task-priority-input').value = t ? t.priority : 'p2';
+            document.getElementById('task-desc-input').value = t ? (t.description || '') : '';
+            document.getElementById('modal-task').style.display = 'flex';
+        }
+
+        function saveTask() {
+            const editId = document.getElementById('task-edit-id').value;
+            const title = document.getElementById('task-title-input').value.trim();
+            const dueDate = document.getElementById('task-date-input').value;
+            const priority = document.getElementById('task-priority-input').value;
+            const description = document.getElementById('task-desc-input').value.trim();
+            if (!title || !currentSubprojectId) return;
+
+            let tasks = isFirebaseActive ? firebaseTasks : localTasks;
+            let subTasks = tasks.filter(t => t.subprojectId === currentSubprojectId);
+            const maxOrder = subTasks.length ? Math.max(...subTasks.map(t => t.order || 0)) + 1 : 0;
+
+            if (editId) {
+                if (isFirebaseActive) db.collection('tasks').doc(editId).update({ title, dueDate, priority, description }).then(() => closeModal('modal-task'));
+                else { let t = localTasks.find(x => x.id === editId); if(t){t.title=title;t.dueDate=dueDate;t.priority=priority;t.description=description;} closeModal('modal-task'); renderTasks(); }
+            } else {
+                if (isFirebaseActive) db.collection('tasks').add({ subprojectId: currentSubprojectId, title, dueDate, priority, description, completed: false, order: maxOrder }).then(() => closeModal('modal-task'));
+                else { localTasks.push({ id: 't_'+Date.now(), subprojectId: currentSubprojectId, title, dueDate, priority, description, completed: false, order: maxOrder }); closeModal('modal-task'); renderTasks(); }
+            }
+        }
+
+        function deleteTask(id) {
+            let tasks = isFirebaseActive ? firebaseTasks : localTasks;
+            let task = tasks.find(t => t.id === id);
+            const title = task ? task.title : 'úkol';
+
+            if (!confirm(`Smazat úkol "${title}"?`)) return;
+
+            if (isFirebaseActive) db.collection('tasks').doc(id).delete();
+            else { localTasks = localTasks.filter(t => t.id !== id); renderTasks(); }
+        }
+
+        function openFolderModal() { document.getElementById('modal-folder').style.display = 'flex'; }
+
+        function toggleArchiveCurrentProject() {
+            let projects = isFirebaseActive ? firebaseProjects : localProjects;
+            let p = projects.find(x => x.id === currentProjectId);
+            if (p) {
+                p.archived = !p.archived;
+                if (isFirebaseActive) db.collection('projects').doc(currentProjectId).update({ archived: p.archived });
+                selectProject(currentProjectId);
+            }
+        }
+
+        function deleteCurrentProject() {
+            let projects = isFirebaseActive ? firebaseProjects : localProjects;
+            let p = projects.find(x => x.id === currentProjectId);
+            const name = p ? p.name : 'projekt';
+
+            if (!confirm(`Smazat celý projekt "${name}" včetně všech podprojektů a dat?`)) return;
+
+            if (isFirebaseActive) db.collection('projects').doc(currentProjectId).delete();
+            else { localProjects = localProjects.filter(item => item.id !== currentProjectId); }
+            
+            selectGlobalAllDeadlines();
+            renderProjects();
+        }
+
+        function editCurrentProjectName() { if(currentProjectId && currentProjectId !== 'ALL_DEADLINES') openProjectModal(currentProjectId); }
+        function escapeHtml(text) { return (text || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;"); }
+
+        renderProjects();
+        renderGlobalAllDeadlinesView();
+
+        if (isFirebaseActive) {
+            db.collection('projects').onSnapshot(snap => {
+                firebaseProjects = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                localStorage.setItem('cache_projects', JSON.stringify(firebaseProjects));
+                renderProjects();
+            });
+
+            db.collection('subprojects').onSnapshot(snap => {
+                firebaseSubprojects = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                localStorage.setItem('cache_subprojects', JSON.stringify(firebaseSubprojects));
+                if (currentProjectId && currentProjectId !== 'ALL_DEADLINES') renderSubprojects();
+            });
+
+            db.collection('tasks').onSnapshot(snap => {
+                firebaseTasks = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                localStorage.setItem('cache_tasks', JSON.stringify(firebaseTasks));
+                if (currentSubprojectId) renderTasks();
+                if (currentProjectId === 'ALL_DEADLINES') renderGlobalAllDeadlinesView();
+            });
+
+            db.collection('photos').onSnapshot(snap => {
+                firebasePhotos = snap.docs.map(doc => ({ id: doc.id, isPhoto: true, ...doc.data() }));
+                if (currentSubprojectId) renderPhotos();
+            });
+
+            db.collection('folders').onSnapshot(snap => {
+                firebaseFolders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                localStorage.setItem('cache_folders', JSON.stringify(firebaseFolders));
+                if (currentSubprojectId) renderExplorer();
+            });
+
+            db.collection('files').onSnapshot(snap => {
+                firebaseFiles = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (currentSubprojectId) renderExplorer();
+            });
+        }
+    </script>
+</body>
+</html>
