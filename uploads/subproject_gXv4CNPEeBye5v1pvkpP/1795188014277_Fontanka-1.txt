@@ -1,0 +1,147 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+
+// ===== NASTAVENÍ SÍTĚ =====
+const char* ssid = "TP-LINK_30FF7A";                //název sítě   TP-LINK_30FF7A    DEK1
+const char* password = "756123456";       //heslo   756123456    Elnici100
+const char* budikIP = "http://192.168.0.235/fontankaData";        // upravit ještě tady  "http://192.168.0.235/fontankaData?voltage="
+
+// ===== PINY =====
+#define PIN_CERPADLO  26  // Výstup na MOSFET / Relé pro čerpadlo
+#define PIN_PLOVAK    27  // Vstup z plováku (spojen proti GND)
+#define PIN_BATERIE   34  // ADC pin pro měření napětí přes dělič
+
+// ===== KONSTANTY PRO MĚŘENÍ =====
+// Zde zadej poměr děliče (např. pro rezistory 202,5k a 29,5k je násobič cca 7.66)
+const float ANALOG_MULTIPLIER = 8.83;    // upravený náspobič šitý na naše ESP32
+const float MIN_BATTERY_VOLTAGE = 11.8; // Minimální napětí pro spuštění čerpadla (V)
+
+// Měření napětí baterie
+float zmerNapetiBaterie() {
+  int rawADC = analogRead(PIN_BATERIE);
+  float adcVoltage = (rawADC / 4095.0) * 3.3;
+  return adcVoltage * ANALOG_MULTIPLIER;
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  pinMode(PIN_CERPADLO, OUTPUT);
+  digitalWrite(PIN_CERPADLO, LOW); // Pro jistotu hned vypnuto
+  
+  pinMode(PIN_PLOVAK, INPUT_PULLUP); // Plovák spíná k GND
+  
+  delay(500);
+
+  // 1. Změříme napětí v klidu
+  float batVoltage = zmerNapetiBaterie();
+  Serial.printf("Změřené napětí baterie: %.2f V\n", batVoltage);
+
+  // 2. Připojení k WiFi
+  WiFi.begin(ssid, password);
+  int timeout = 0;
+  while (WiFi.status() != WL_CONNECTED && timeout < 20) {
+    delay(500);
+    Serial.print(".");
+    timeout++;
+  }
+
+  int runDurationSec = 0;
+  int sleepDurationSec = 3600; // Výchozí nouzový spánek (1 hodina), pokud selže komunikace
+
+if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nPřipojeno k WiFi. Odesílám data budíku...");
+    
+    HTTPClient http;
+    // Odeslání napětí a získání časů v jednom dotazu
+    String url = "http://192.168.0.235/fontankaData?voltage=" + String(batVoltage, 2);
+    http.begin(url);
+    
+    int httpCode = http.GET();
+    if (httpCode == HTTP_CODE_OK) {
+      String payload = http.getString();
+      Serial.println("Odpověď z budíku: " + payload);
+
+      // Naparsujeme JSON
+      StaticJsonDocument<200> doc;
+      DeserializationError error = deserializeJson(doc, payload);
+
+      if (!error) {
+        int casH = doc["casH"];
+        int casM = doc["casM"];
+        int startH = doc["startH"];
+        int startM = doc["startM"];
+        int endH = doc["endH"];
+        int endM = doc["endM"];
+
+        int currentMin = casH * 60 + casM;
+        int startMin = startH * 60 + startM;
+        int endMin = endH * 60 + endM;
+
+        // Pokud jsme se probudili v okně pro čerpání
+        if (currentMin >= startMin && currentMin < endMin) {
+          runDurationSec = (endMin - currentMin) * 60;
+          int toMidnight = (24 * 60) - endMin;
+          sleepDurationSec = (toMidnight + (3 * 60)) * 60; 
+        } 
+        // Pokud jsme se probudili ráno před čerpáním
+        else if (currentMin < startMin) {
+          runDurationSec = 0;
+          sleepDurationSec = (startMin - currentMin) * 60;
+        } 
+        // Pokud jsme po čerpání
+        else {
+          runDurationSec = 0;
+          int toMidnight = (24 * 60) - currentMin;
+          sleepDurationSec = (toMidnight + (3 * 60)) * 60;
+        }
+      }
+    } else {
+      Serial.printf("Chyba při komunikaci s budíkem, HTTP kód: %d\n", httpCode);
+    }
+    http.end();
+  } else {
+    Serial.println("\nWiFi připojení selhalo!");
+  }
+
+  // Odpojíme WiFi kvůli úspoře energie
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+
+  // 3. Spuštění čerpadla (pokud je čas a dostatek energie/vody)
+  if (runDurationSec > 0) {
+    bool plovakOK = (digitalRead(PIN_PLOVAK) == LOW); // LOW = dost vody
+    
+    if (batVoltage >= MIN_BATTERY_VOLTAGE && plovakOK) {
+      Serial.printf("Spouštím čerpadlo na %d sekund.\n", runDurationSec);
+      digitalWrite(PIN_CERPADLO, HIGH);
+
+      unsigned long startMillis = millis();
+      unsigned long runMillis = (unsigned long)runDurationSec * 1000UL;
+
+      // Běh čerpadla s neustálou kontrolou plováku
+      while (millis() - startMillis < runMillis) {
+        if (digitalRead(PIN_PLOVAK) == HIGH) { // Došla voda!
+          Serial.println("VAROVÁNÍ: Došla voda! Vypínám čerpadlo.");
+          break;
+        }
+        delay(1000); // Kontrola každou sekundu
+      }
+      digitalWrite(PIN_CERPADLO, LOW);
+      Serial.println("Čerpadlo vypnuto.");
+    } else {
+      Serial.println("Čerpadlo NESPŮŠTĚNO (nízké napětí nebo málo vody).");
+    }
+  }
+
+  // 4. Přechod do Deep Sleep
+  Serial.printf("Uspávám ESP32 na %d sekund...\n", sleepDurationSec);
+  uint64_t sleepUs = (uint64_t)sleepDurationSec * 1000000ULL;
+  esp_sleep_enable_timer_wakeup(sleepUs);
+  esp_deep_sleep_start();
+}
+
+void loop() {
+  // Vše se odehrává v setup(), sem se kód nikdy nedostane
+}
