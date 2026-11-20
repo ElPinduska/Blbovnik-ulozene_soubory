@@ -1,0 +1,311 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+
+// ===== NASTAVENÍ SÍTĚ =====
+const char* ssid = "DEK1";
+const char* password = "Elnici100";
+const char* budikIP = "http://192.168.1.235/fontankaData";
+
+// ===== PINY (Odpovídají vašemu návrhu) =====
+// Fontánka
+#define PIN_CERPADLO  26
+#define PIN_PLOVAK    27  // Plovák spíná k GND
+#define PIN_BATERIE   34
+
+// Světlo
+#define PIN_SVETLO        25
+#define PIN_SPINAC_SVETLO 32  // Vypínač světla
+
+// Semafor
+#define PIN_SPINAC_SEMAFOR  33 // Vypínač semaforu
+#define PIN_CIDLO_SKLUZAVKA 22 // Čidlo na skluzavce
+#define PIN_SEM_ZELENA      18
+#define PIN_SEM_ORANZOVA    19
+#define PIN_SEM_CERVENA     21
+
+// ===== KONSTANTY =====
+const float ANALOG_MULTIPLIER = 8.83;
+const float MIN_BATTERY_VOLTAGE = 11.8;
+
+const unsigned long SVETLO_TIMEOUT_MS = 10 * 60 * 1000UL;  // 10 minut
+const unsigned long SEMAFOR_TIMEOUT_MS = 60 * 60 * 1000UL; // 60 minut
+
+// ===== STAVOVÉ PROMĚNNÉ (pamatuje si díky Light Sleep) =====
+// Budík a Fontánka
+bool isSyncDue = true; 
+unsigned long lastSyncMillis = 0;
+unsigned long syncIntervalMs = 0;
+
+bool isPumping = false;
+unsigned long pumpStartMillis = 0;
+unsigned long pumpRunMs = 0;
+
+// Světlo
+bool svetloActive = false;
+unsigned long svetloStartMillis = 0;
+int lastSvetloSwitch = -1;
+
+// Semafor
+bool semaforActive = false;
+unsigned long semaforStartMillis = 0;
+int lastSemaforSwitch = -1;
+int semState = 0; // 0 = Červená, 1 = Oranžová, 2 = Zelená, 3 = Zpět
+unsigned long semTimer = 0;
+
+
+// Funkce pro měření baterie
+float zmerNapetiBaterie() {
+  int rawADC = analogRead(PIN_BATERIE);
+  float adcVoltage = (rawADC / 4095.0) * 3.3;
+  return adcVoltage * ANALOG_MULTIPLIER;
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // Inicializace pinů - Výstupy
+  pinMode(PIN_CERPADLO, OUTPUT);      digitalWrite(PIN_CERPADLO, LOW);
+  pinMode(PIN_SVETLO, OUTPUT);        digitalWrite(PIN_SVETLO, LOW);
+  pinMode(PIN_SEM_ZELENA, OUTPUT);    digitalWrite(PIN_SEM_ZELENA, LOW);
+  pinMode(PIN_SEM_ORANZOVA, OUTPUT);  digitalWrite(PIN_SEM_ORANZOVA, LOW);
+  pinMode(PIN_SEM_CERVENA, OUTPUT);   digitalWrite(PIN_SEM_CERVENA, LOW);
+
+  // Inicializace pinů - Vstupy
+  pinMode(PIN_PLOVAK, INPUT_PULLUP);
+  pinMode(PIN_CIDLO_SKLUZAVKA, INPUT_PULLUP); // Předpoklad: čidlo spíná k GND (LOW = dítě sedí)
+  
+  // Předpoklad k vypínačům: Přivedou 3.3V (HIGH) když jsou zapnuté
+  pinMode(PIN_SPINAC_SVETLO, INPUT_PULLDOWN); 
+  pinMode(PIN_SPINAC_SEMAFOR, INPUT_PULLDOWN);
+
+  delay(500);
+
+  // Načtení výchozího fyzického stavu vypínačů při restartu
+  lastSvetloSwitch = digitalRead(PIN_SPINAC_SVETLO);
+  lastSemaforSwitch = digitalRead(PIN_SPINAC_SEMAFOR);
+
+  // Pokud je při startu ESP vypínač světla již v zapnuté poloze (HIGH), rovnou ho aktivujeme
+  if (lastSvetloSwitch == HIGH) {
+    svetloActive = true;
+    svetloStartMillis = millis();
+    digitalWrite(PIN_SVETLO, HIGH);
+  }
+  
+  if (lastSemaforSwitch == HIGH) {
+    semaforActive = true;
+    semaforStartMillis = millis();
+    semState = 0;
+  }
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+  float batVoltage = zmerNapetiBaterie();
+  bool lowBattery = (batVoltage < MIN_BATTERY_VOLTAGE);
+
+  // ==========================================
+  // 1. BEZPEČNOSTNÍ VYPÍNÁNÍ PŘI NÍZKÉ BATERII
+  // ==========================================
+  if (lowBattery) {
+    if (isPumping) { isPumping = false; digitalWrite(PIN_CERPADLO, LOW); }
+    if (svetloActive) { svetloActive = false; digitalWrite(PIN_SVETLO, LOW); }
+    if (semaforActive) { 
+      semaforActive = false; 
+      digitalWrite(PIN_SEM_ZELENA, LOW); digitalWrite(PIN_SEM_ORANZOVA, LOW); digitalWrite(PIN_SEM_CERVENA, LOW); 
+    }
+  }
+
+  // ==========================================
+  // 2. OVLÁDÁNÍ SVĚTLA VYPÍNAČEM (10 MINUT)
+  // ==========================================
+  int currentSvetlo = digitalRead(PIN_SPINAC_SVETLO);
+  if (currentSvetlo != lastSvetloSwitch) {
+    lastSvetloSwitch = currentSvetlo;
+    
+    if (currentSvetlo == HIGH) { // Přepnuto do polohy ZAPNUTO (Přišlo napětí)
+      if (!lowBattery) {
+        svetloActive = true;
+        svetloStartMillis = currentMillis;
+        digitalWrite(PIN_SVETLO, HIGH);
+      }
+    } else { // Přepnuto do polohy VYPNUTO
+      svetloActive = false;
+      digitalWrite(PIN_SVETLO, LOW);
+    }
+  }
+  
+  // Softwarové vypnutí po 10 minutách
+  if (svetloActive && (currentMillis - svetloStartMillis >= SVETLO_TIMEOUT_MS)) {
+    svetloActive = false;
+    digitalWrite(PIN_SVETLO, LOW);
+  }
+
+  // ==========================================
+  // 3. OVLÁDÁNÍ SEMAFORU VYPÍNAČEM (60 MINUT)
+  // ==========================================
+  int currentSemafor = digitalRead(PIN_SPINAC_SEMAFOR);
+  if (currentSemafor != lastSemaforSwitch) {
+    lastSemaforSwitch = currentSemafor;
+    
+    if (currentSemafor == HIGH) { // ZAPNUTO
+      if (!lowBattery) {
+        semaforActive = true;
+        semaforStartMillis = currentMillis;
+        semState = 0; // Začínáme červenou
+        semTimer = currentMillis;
+      }
+    } else { // VYPNUTO
+      semaforActive = false;
+      digitalWrite(PIN_SEM_ZELENA, LOW); digitalWrite(PIN_SEM_ORANZOVA, LOW); digitalWrite(PIN_SEM_CERVENA, LOW);
+    }
+  }
+
+  if (semaforActive && (currentMillis - semaforStartMillis >= SEMAFOR_TIMEOUT_MS)) {
+    semaforActive = false;
+    digitalWrite(PIN_SEM_ZELENA, LOW); digitalWrite(PIN_SEM_ORANZOVA, LOW); digitalWrite(PIN_SEM_CERVENA, LOW);
+  }
+
+  // LOGIKA ČIDLA A BAREV SEMAFORU
+  if (semaforActive) {
+    bool diteSedi = (digitalRead(PIN_CIDLO_SKLUZAVKA) == LOW); // LOW = sepnuté čidlo
+
+    switch (semState) {
+      case 0: // Svítí Červená, čekáme na dítě
+        digitalWrite(PIN_SEM_CERVENA, HIGH); digitalWrite(PIN_SEM_ORANZOVA, LOW); digitalWrite(PIN_SEM_ZELENA, LOW);
+        if (diteSedi && (currentMillis - semTimer > 2000)) { // Dítě sedí aspoň 2 vteřiny
+          semState = 1; semTimer = currentMillis;
+        }
+        break;
+      case 1: // Připravit (Červená + Oranžová)
+        digitalWrite(PIN_SEM_CERVENA, HIGH); digitalWrite(PIN_SEM_ORANZOVA, HIGH); digitalWrite(PIN_SEM_ZELENA, LOW);
+        if (currentMillis - semTimer > 2000) {
+          semState = 2; semTimer = currentMillis;
+        }
+        break;
+      case 2: // Jízda (Zelená)
+        digitalWrite(PIN_SEM_CERVENA, LOW); digitalWrite(PIN_SEM_ORANZOVA, LOW); digitalWrite(PIN_SEM_ZELENA, HIGH);
+        // Zelená svítí dokud dítě neodjede, ale minimálně 5 vteřin pro jistotu
+        if (!diteSedi && (currentMillis - semTimer > 5000)) { 
+          semState = 3; semTimer = currentMillis;
+        }
+        break;
+      case 3: // Konec jízdy (Oranžová)
+        digitalWrite(PIN_SEM_CERVENA, LOW); digitalWrite(PIN_SEM_ORANZOVA, HIGH); digitalWrite(PIN_SEM_ZELENA, LOW);
+        if (currentMillis - semTimer > 2000) {
+          semState = 0; semTimer = currentMillis;
+        }
+        break;
+    }
+  }
+
+// ==========================================
+  // 4. FONTÁNKA A KOMUNIKACE S BUDÍKEM
+  // ==========================================
+  if (isSyncDue || (currentMillis - lastSyncMillis >= syncIntervalMs && !isSyncDue)) {
+    Serial.println("\n--- START SYNCHRONIZACE ---");
+    Serial.println("Pripojovani k WiFi...");
+    WiFi.begin(ssid, password);
+    
+    int timeout = 0;
+    while (WiFi.status() != WL_CONNECTED && timeout < 20) { 
+      delay(500); 
+      Serial.print("."); 
+      timeout++; 
+    }
+    Serial.println();
+
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("WiFi pripojena! Zkousim spojeni s budikem...");
+      HTTPClient http;
+      String url = String(budikIP) + "?voltage=" + String(batVoltage, 2);
+      Serial.println("Volam URL: " + url);
+      
+      http.begin(url);
+      int httpCode = http.GET();
+      
+      Serial.print("HTTP kod odpovedi od budiku: ");
+      Serial.println(httpCode);
+
+      if (httpCode == HTTP_CODE_OK) {
+        String payload = http.getString();
+        Serial.println("Prijata data: " + payload);
+        
+        StaticJsonDocument<200> doc;
+        if (!deserializeJson(doc, payload)) {
+          Serial.println("JSON uspesne precten.");
+          
+          int runDurationSec = 0;
+          int sleepDurationSec = 3600;
+
+          int currentMin = (int)doc["casH"] * 60 + (int)doc["casM"];
+          int startMin = (int)doc["startH"] * 60 + (int)doc["startM"];
+          int endMin = (int)doc["endH"] * 60 + (int)doc["endM"];
+
+          if (currentMin >= startMin && currentMin < endMin) {
+            runDurationSec = (endMin - currentMin) * 60;
+            sleepDurationSec = ((24 * 60) - endMin + (3 * 60)) * 60; 
+          } else if (currentMin < startMin) {
+            sleepDurationSec = (startMin - currentMin) * 60;
+          } else {
+            sleepDurationSec = ((24 * 60) - currentMin + (3 * 60)) * 60;
+          }
+
+          syncIntervalMs = (unsigned long)sleepDurationSec * 1000UL;
+          lastSyncMillis = currentMillis;
+          isSyncDue = false;
+
+          Serial.print("Fontanka pobezi vterin: ");
+          Serial.println(runDurationSec);
+          Serial.print("Dalsi spojeni s budikem za (vterin): ");
+          Serial.println(sleepDurationSec);
+
+          if (runDurationSec > 0 && !lowBattery) {
+            Serial.println("Spoustim cerpadlo!");
+            isPumping = true;
+            pumpStartMillis = currentMillis;
+            pumpRunMs = (unsigned long)runDurationSec * 1000UL;
+            digitalWrite(PIN_CERPADLO, HIGH);
+          }
+        } else {
+          Serial.println("Chyba: Nelze rozlustit JSON od budiku.");
+        }
+      } else if (httpCode == 500) {
+        Serial.println("Budik hlasil HTTP 500. Pravdepodobne jeste nema nacteny cas z NTP.");
+      } else {
+        Serial.println("Spojeni s budikem selhalo.");
+      }
+      http.end();
+    } else {
+      Serial.println("Chyba: K WiFi se nepodarilo pripojit.");
+    }
+    
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+    Serial.println("WiFi vypnuta, system pokracuje ve slajdovani...");
+    Serial.println("---------------------------\n");
+
+    if (isSyncDue) {
+      syncIntervalMs = 15 * 60 * 1000UL;
+      lastSyncMillis = currentMillis;
+      isSyncDue = false;
+      Serial.println("Planuji novy pokus za 15 minut.");
+    }
+  }
+
+  // Hlídání běžícího čerpadla
+  if (isPumping) {
+    if (digitalRead(PIN_PLOVAK) == HIGH || (currentMillis - pumpStartMillis >= pumpRunMs)) {
+      isPumping = false;
+      digitalWrite(PIN_CERPADLO, LOW);
+    }
+  }
+
+  // ==========================================
+  // 5. USPÁNÍ PRO ÚSPORU BATERIE (Light Sleep)
+  // ==========================================
+  // Místo prázdného chodu ESP32 na 100 ms usne. Tohle zaručí obrovskou úsporu energie, 
+  // ale pro člověka systém reaguje "okamžitě" plynule 10x za vteřinu.
+  esp_sleep_enable_timer_wakeup(100 * 1000ULL);
+  esp_light_sleep_start();
+}
